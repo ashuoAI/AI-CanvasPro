@@ -1,0 +1,34 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SourceImage Preload Fail Test</title><style>body{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;background:#0b0b0e;color:#e6e6ea;margin:0;padding:16px}.ok{color:#34d399}.bad{color:#fb7185}</style></head><body><h1 style="margin:0 0 12px 0;font-size:16px;font-weight:700">SourceImage Preload Fail Test</h1><pre id="out" style="margin:0;white-space:pre-wrap;word-break:break-word"></pre><script type="module">import store from "../src/core/store.js";
+    import { generateId } from "../src/core/math.js";
+    import { SourceImageNode } from "../components/SourceImageNode.js";
+    const outEl = document.getElementById("out");
+    function line(text, ok = null) {
+      const span = document.createElement("span");
+      span.textContent = text + "\n";
+      if (ok === true) span.className = "ok";
+      if (ok === false) span.className = "bad";
+      outEl.appendChild(span);
+    }
+    function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAOeG8x0AAAAASUVORK5CYII=";
+    async function run() {
+      store.updateViewport(0, 0, 1);
+      const id = generateId("source-image");
+      store.addNode({
+        id,
+        type: "source-image",
+        x: 40,
+        y: 40,
+        width: 180,
+        height: 140,
+        src: "https://file4.aitohumanize.com/file/not-exist.png",
+        thumbUrl: tinyPng,
+        fixedSize: true
+      });
+      const inst = new SourceImageNode(store.getState().nodes[id]);
+      document.body.appendChild(inst.mount());
+      await sleep(600);
+      line("完成（预加载失败不应再打印 error）", true);
+    }
+    run().catch((e) => line(String(e && e.stack ? e.stack : e), false));</script></body></html>

@@ -1,0 +1,158 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Storyboard Push-In Test</title><style>body{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;background:#0b0b0e;color:#e6e6ea;margin:0;padding:16px}.ok{color:#34d399}.bad{color:#fb7185}</style></head><body><h1 style="margin:0 0 12px 0;font-size:16px;font-weight:700">Storyboard Push-In Test</h1><pre id="out" style="margin:0;white-space:pre-wrap;word-break:break-word"></pre><script>let _out=document.getElementById("out");_out.textContent="bootstrap\n",window.addEventListener("error",t=>{_out.textContent+="error: "+(t&&t.message?t.message:String(t))+"\n"}),window.addEventListener("unhandledrejection",t=>{_out.textContent+="rejection: "+String(t&&t.reason?t.reason:t)+"\n"})</script><script type="module">import store from "../src/core/store.js";
+    import { generateId } from "../src/core/math.js";
+    import { handlePointerDown, handlePointerMove, handlePointerUp } from "../src/core/interaction.js";
+    const outEl = document.getElementById("out");
+    function line(text, ok = null) {
+      const span = document.createElement("span");
+      span.textContent = text + "\n";
+      if (ok === true) span.className = "ok";
+      if (ok === false) span.className = "bad";
+      outEl.appendChild(span);
+    }
+    function assert(name, cond, detail = "") {
+      if (cond) {
+        line("✓ " + name, true);
+        return true;
+      }
+      line("✗ " + name + (detail ? " — " + detail : ""), false);
+      return false;
+    }
+    function sleep(ms) {
+      return new Promise((r) => setTimeout(r, ms));
+    }
+    function makeFilledCells(cols, rows, seed = "filled") {
+      const cells = [];
+      for (let i = 0; i < cols * rows; i++) {
+        cells.push({
+          id: generateId("cell"),
+          url: "filled:" + seed + ":" + i,
+          localPath: null,
+          thumbUrl: null,
+          isEmpty: false,
+          col: i % cols,
+          row: Math.floor(i / cols),
+        });
+      }
+      return cells;
+    }
+    function screenPosForStoryboardCell(sb, col, row) {
+      const cw = sb.width / sb.cols;
+      const ch = sb.height / sb.rows;
+      return { x: sb.x + col * cw + cw / 2, y: sb.y + row * ch + ch / 2 };
+    }
+    function screenPosForNodeCenter(n) {
+      return { x: n.x + (n.width || 1) / 2, y: n.y + (n.height || 1) / 2 };
+    }
+    async function run() {
+      window.v2Renderer = window.v2Renderer || {};
+      window.v2Renderer.nodeInstances = new Map();
+      const highlightLog = [];
+      const sbId = generateId("storyboard");
+      window.v2Renderer.nodeInstances.set(sbId, { highlightCell: (idx) => highlightLog.push(idx) });
+      store.updateViewport(0, 0, 1);
+      const cols = 2;
+      const rows = 2;
+      const sb = {
+        id: sbId,
+        type: "storyboard",
+        x: 200,
+        y: 200,
+        width: 200,
+        height: 200,
+        cols,
+        rows,
+        isEditing: false,
+        cells: makeFilledCells(cols, rows, "A"),
+      };
+      const img1Id = generateId("source-image");
+      const img1 = {
+        id: img1Id,
+        type: "source-image",
+        x: 40,
+        y: 40,
+        width: 60,
+        height: 60,
+        src: "img:1",
+        localPath: null,
+        thumbUrl: null,
+      };
+      store.batch(() => {
+        store.addNode(sb);
+        store.addNode(img1);
+        store.setSelectedNodes([img1Id]);
+      });
+      const img1Center = screenPosForNodeCenter(img1);
+      const targetFull = screenPosForStoryboardCell(sb, 0, 0);
+      handlePointerDown(img1Center.x, img1Center.y, false, false, null);
+      handlePointerMove(targetFull.x, targetFull.y, { buttons: 1 });
+      handlePointerUp(targetFull.x, targetFull.y);
+      await sleep(80);
+      const s1 = store.getState();
+      assert("非编辑 + 目标格已满：不写入 cells", s1.nodes[sbId].cells[0].url === "filled:A:0", s1.nodes[sbId].cells[0].url);
+      assert("非编辑 + 目标格已满：源图片节点不删除", !!s1.nodes[img1Id]);
+      const img2Id = generateId("source-image");
+      const img2 = {
+        id: img2Id,
+        type: "source-image",
+        x: 40,
+        y: 140,
+        width: 60,
+        height: 60,
+        src: "img:2",
+        localPath: null,
+        thumbUrl: null,
+      };
+      store.batch(() => {
+        store.addNode(img2);
+        store.setSelectedNodes([img2Id]);
+        const newCells = makeFilledCells(cols, rows, "B");
+        newCells[0] = { ...newCells[0], url: "", localPath: null, thumbUrl: null, isEmpty: true };
+        store.updateNodeData(sbId, { isEditing: false, cells: newCells });
+      });
+      highlightLog.length = 0;
+      const img2Center = screenPosForNodeCenter(img2);
+      const targetEmpty = screenPosForStoryboardCell(sb, 0, 0);
+      handlePointerDown(img2Center.x, img2Center.y, false, false, null);
+      handlePointerMove(targetEmpty.x, targetEmpty.y, { buttons: 1 });
+      handlePointerUp(targetEmpty.x, targetEmpty.y);
+      await sleep(120);
+      const s2 = store.getState();
+      const cell2 = s2.nodes[sbId].cells[0];
+      assert("非编辑 + 目标格为空：写入 cells", (cell2.localPath || cell2.url) === "img:2");
+      assert("非编辑 + 目标格为空：源图片节点被删除", !s2.nodes[img2Id]);
+      assert("可投放目标格：拖拽过程触发高亮", highlightLog.includes(0));
+      const img3Id = generateId("source-image");
+      const img3 = {
+        id: img3Id,
+        type: "source-image",
+        x: 40,
+        y: 240,
+        width: 60,
+        height: 60,
+        src: "img:3",
+        localPath: null,
+        thumbUrl: null,
+      };
+      store.batch(() => {
+        store.addNode(img3);
+        store.setSelectedNodes([img3Id]);
+        store.updateNodeData(sbId, { isEditing: true, cells: makeFilledCells(cols, rows, "C") });
+      });
+      const img3Center = screenPosForNodeCenter(img3);
+      const targetFull2 = screenPosForStoryboardCell(sb, 1, 0);
+      handlePointerDown(img3Center.x, img3Center.y, false, false, null);
+      handlePointerMove(targetFull2.x, targetFull2.y, { buttons: 1 });
+      handlePointerUp(targetFull2.x, targetFull2.y);
+      await sleep(120);
+      const s3 = store.getState();
+      const cell3 = s3.nodes[sbId].cells[1];
+      assert("编辑模式 + 目标格已满：允许覆盖写入", (cell3.localPath || cell3.url) === "img:3");
+      assert("编辑模式 + 覆盖写入：源图片节点被删除", !s3.nodes[img3Id]);
+      store.batch(() => {
+        store.deleteNodes([img1Id, img2Id, img3Id, sbId]);
+      });
+      line("\n完成", true);
+    }
+    run().catch((err) => {
+      line(String(err && err.stack ? err.stack : err), false);
+    });</script></body></html>

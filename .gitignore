@@ -1,0 +1,48 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 运行时用户数据（不入库）
+user/
+output/
+data/uploads/
+
+# 示例画布资源（需要推送的）
+!/output/gen_1774368601277_379.png
+!/output/gen_1774368659423_719.png
+!/output/gen_1774368695062_760.png
+!/output/gen_1774368990455_303.png
+!/output/gen_1774369125008_758.png
+!/output/gen_1774372289977_716.png
+!/output/gen_1774372291646_967.png
+!/output/gen_1774372292863_396.png
+!user/Canvas Project/短剧测试流程.json
+
+# 虚拟环境
+venv/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+docs/
+
+# 演示/测试目录
+demo123/
+tests/
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# 本地开发辅助（仅本地，不上传 Git）
+dev-helper.js
+.agent/
+.agentsrules/
+.trae/
+.dev
+
+# 仅保留 README.md，其余 Markdown 不入库
+*.md
+!README.md
