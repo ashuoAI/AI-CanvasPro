@@ -1,0 +1,8 @@
+requests
+numpy
+pillow
+onnxruntime
+transformers
+tokenizers
+scenedetect
+opencv-python
