@@ -47,8 +47,8 @@
 
 1. **克隆仓库**
    ```bash
-   git clone https://github.com/ashuoAI/aicanvas.git
-   cd aicanvas
+   git clone https://github.com/ashuoAI/AI-CanvasPro.git
+   cd AI-CanvasPro
    ```
 
 2. **安装依赖并启动**
@@ -57,6 +57,8 @@
    python -m venv venv
    # 激活虚拟环境
    venv\Scripts\activate.bat
+   # 安装依赖
+   pip install -r requirements
    # 启动服务
    python server.py
    ```
