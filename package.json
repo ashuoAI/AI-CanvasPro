@@ -1,0 +1,10 @@
+{
+  "name": "ai-canvas-editor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "check:architecture": "node tools/check_architecture_guard.cjs",
+    "test": "node --test"
+  }
+}
