@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "targetEnvironment": {
+      "os": "ubuntu-latest",
+      "browser": "chromium",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      }
+    },
+    "collectedEnvironment": {
+      "os": "win32-10.0.26200"
+    },
+    "sampleCount": 5,
+    "generatedAt": "2026-04-11T17:29:39.483Z",
+    "sourceMetricsFile": "test-results/perf-metrics.json"
+  },
+  "metrics": {
+    "firstScreenMs": {
+      "median": 286.90000000596046
+    },
+    "dragFps": {
+      "median": 48.363980174567764
+    },
+    "edgeRedrawMs": {
+      "median": 1.7999999821186066
+    }
+  }
+}

@@ -1,0 +1,8 @@
+requests>=2.31
+numpy>=1.24
+pillow>=10.0
+onnxruntime>=1.17
+transformers>=4.38
+tokenizers>=0.15
+scenedetect>=0.6.2
+opencv-python>=4.8

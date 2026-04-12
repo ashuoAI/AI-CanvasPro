@@ -1,0 +1,66 @@
+# Python 缂傛挸鐡?
+__pycache__/
+*.pyc
+*.pyo
+
+# 鏉╂劘顢戦弮鍓佹暏閹撮攱鏆熼幑顕嗙礄娑撳秴鍙嗘惔鎿勭礆
+user/
+output/
+data/uploads/
+release/    
+# 缁€杞扮伐閻㈣绔风挧鍕爱閿涘牓娓剁憰浣瑰腹闁胶娈戦敍?
+!/output/gen_1774368601277_379.png
+!/output/gen_1774368659423_719.png
+!/output/gen_1774368695062_760.png
+!/output/gen_1774368990455_303.png
+!/output/gen_1774369125008_758.png
+!/output/gen_1774372289977_716.png
+!/output/gen_1774372291646_967.png
+!/output/gen_1774372292863_396.png
+!user/Canvas Project/閻厼澧藉ù瀣槸濞翠胶鈻?json
+
+# 閾忔碍瀚欓悳顖氼暔
+venv/
+
+# 缁崵绮洪弬鍥︽
+.DS_Store
+Thumbs.db
+docs/
+
+# 濠曟梻銇?濞村鐦惄顔肩秿
+demo123/
+tests/
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+playwright-report/
+test-results/
+.playwright/
+.husky/_/
+
+# 閺堫剙婀村鈧崣鎴ｇ窡閸?
+dev-helper.js
+.agent/
+.agentsrules/
+.trae/
+.dev
+/dev
+.codex/
+.vscode/
+# 濡€崇€烽弬鍥︽閿涘牅绗夐崗銉ョ氨閿?
+models/sam3_onnx/
+
+# 娴犲懍绻氶悾?README.md閿涘苯鍙炬担?Markdown 娑撳秴鍙嗘惔?
+*.md
+!README.md
+!白皮书.md
+!使用说明.md
+
+!docs/
+docs/*
+!docs/governance/
+!docs/governance/architecture-exceptions.md
+!docs/perf/
+!docs/perf/baseline.chromium-ci.json

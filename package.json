@@ -1,0 +1,23 @@
+{
+  "name": "ai-canvas-editor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "check:architecture": "node tools/check_architecture_guard.cjs",
+    "check:encoding": "node tools/check_encoding_guard.cjs",
+    "console:utf8:ps": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\\tools\\Enable-Utf8Console.ps1",
+    "test": "node --test",
+    "test:critical": "node --test tests/store.test.js tests/math.test.js tests/history.test.js tests/api.test.js",
+    "test:e2e:smoke": "playwright test e2e/smoke.spec.js --project=chromium-smoke",
+    "perf:collect": "playwright test e2e/perf.spec.js --project=chromium-smoke",
+    "perf:guard": "node tools/perf_guard.cjs",
+    "perf:baseline:update": "node tools/perf_baseline_update.cjs",
+    "precommit:check": "npm run check:architecture && npm run check:encoding && npm run test:critical && npm run test:e2e:smoke",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "husky": "^9.1.7"
+  }
+}
