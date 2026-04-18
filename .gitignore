@@ -1,0 +1,65 @@
+# Python 缂傛挸鐡?
+__pycache__/
+*.pyc
+*.pyo
+
+# 鏉╂劘顢戦弮鍓佹暏閹撮攱鏆熼幑顕嗙礄娑撳秴鍙嗘惔鎿勭礆
+user/
+output/
+data/
+release/
+
+# 閾忔碍瀚欓悳顖氼暔
+venv/
+
+# 缁€杞扮伐閻?
+.DS_Store
+Thumbs.db
+
+# 寮曞彂鑴氭湰涓庢祴璇?
+tools/
+e2e/
+tests/
+.husky/
+
+# 濠曟梻銇?濞村€?
+demo123/
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+playwright-report/
+test-results/
+.playwright/
+.husky/_/
+
+# 閺堫剙婀村?
+dev-helper.js
+.agent/
+.agentsrules/
+.trae/
+.dev
+/dev
+.codex/
+.vscode/
+
+# 濡€崇€烽弬鍥︽?
+models/sam3_onnx/
+
+# 娴犲懍绻氶悾?
+*.md
+!README.md
+!使用说明.md
+
+
+docs/
+
+
+# 压缩脚本
+compress-project.ps1
+project-compressed.zip
+
+# 图片和脚本
+dreamina-login-qr.png
+快速启动-授权系统测试.bat
