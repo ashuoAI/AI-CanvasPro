@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0f13;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e1e24;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="stroke3" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00f2fe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4facfe;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="url(#bg3)"/>
+  
+  <!-- Stylized letter A with canvas feel -->
+  <path d="M 256 120 L 120 400" stroke="url(#stroke3)" stroke-width="40" stroke-linecap="round"/>
+  <path d="M 256 120 L 392 400" stroke="url(#stroke3)" stroke-width="40" stroke-linecap="round"/>
+  
+  <!-- Crossbar acting as a node connection -->
+  <path d="M 180 280 L 332 280" stroke="#fff" stroke-width="24" stroke-linecap="round"/>
+  
+  <!-- Nodes on the A -->
+  <circle cx="256" cy="120" r="28" fill="#fff" stroke="#1e1e24" stroke-width="8"/>
+  <circle cx="120" cy="400" r="28" fill="#fff" stroke="#1e1e24" stroke-width="8"/>
+  <circle cx="392" cy="400" r="28" fill="#fff" stroke="#1e1e24" stroke-width="8"/>
+  <circle cx="180" cy="280" r="20" fill="url(#stroke3)"/>
+  <circle cx="332" cy="280" r="20" fill="url(#stroke3)"/>
+</svg>
