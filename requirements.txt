@@ -1,0 +1,4 @@
+requests>=2.31
+pillow>=10.0
+scenedetect>=0.6.2
+opencv-python>=4.8
