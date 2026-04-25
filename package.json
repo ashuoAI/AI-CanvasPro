@@ -1,0 +1,99 @@
+{
+  "name": "ai-canvaspro",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI CanvasPro desktop editor",
+  "author": "AI CanvasPro",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "check:architecture": "node tools/check_architecture_guard.cjs",
+    "check:encoding": "node tools/check_encoding_guard.cjs",
+    "console:utf8:ps": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\\tools\\Enable-Utf8Console.ps1",
+    "test": "node tools/run-node-tests.mjs",
+    "test:critical": "node --test tests/store.test.js tests/math.test.js tests/history.test.js tests/api.test.js tests/store.contract.test.js tests/store.parity.test.js",
+    "test:storyboard": "node --test src/components/StoryboardNode.test.js src/modules/interaction/DragController.test.js tests/storyboardCellUtils.test.js",
+    "test:image-node-models": "node --test src/components/aigenImage/taskOrchestrationModule.test.js",
+    "test:runninghub": "node --test api/aiImageApi.routing.test.js api/aiVideoApi.test.js api/aiAudioApi.test.js",
+    "test:e2e:smoke": "playwright test e2e/smoke.spec.js --project=chromium-smoke",
+    "perf:collect": "playwright test e2e/perf.spec.js --project=chromium-smoke",
+    "perf:guard": "node tools/perf_guard.cjs",
+    "perf:baseline:update": "node tools/perf_baseline_update.cjs",
+    "electron": "electron electron/main.js",
+    "electron:prepare-runtime:win": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\\tools\\Prepare-ElectronRuntimeWin.ps1",
+    "electron:pack:win": "electron-builder --win dir zip nsis",
+    "electron:publish:win": "electron-builder --win zip nsis --publish always",
+    "precommit:check": "npm run check:architecture && npm run check:encoding && npm run test:critical && npm run test:storyboard && npm run test:e2e:smoke",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
+    "husky": "^9.1.7"
+  },
+  "build": {
+    "appId": "com.aicanvaspro.editor",
+    "productName": "AI CanvasPro",
+    "copyright": "Copyright (c) 2026 AI CanvasPro",
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "api/**/*",
+      "assets/**/*",
+      "backend/**/*",
+      "electron/**/*",
+      "images/**/*",
+      "src/**/*",
+      "styles/**/*",
+      "vendor/**/*",
+      "index.html",
+      "main.js",
+      "server.py",
+      "requirements.txt",
+      "release_notes.txt",
+      "release_video_url.txt",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".electron-runtime/runtime/python",
+        "to": "runtime/python"
+      },
+      {
+        "from": ".electron-runtime/runtime/ffmpeg",
+        "to": "runtime/ffmpeg"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ashuoAI",
+        "repo": "test-aicanvas"
+      }
+    ],
+    "win": {
+      "icon": "build/app-icon.ico",
+      "executableName": "AI CanvasPro",
+      "target": [
+        "dir",
+        "zip",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "artifactName": "AI-CanvasPro-Setup-${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI CanvasPro"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  }
+}

@@ -1,0 +1,42 @@
+* text=auto
+
+# UTF-8 text baseline (LF by default)
+*.js text eol=lf working-tree-encoding=UTF-8
+*.mjs text eol=lf working-tree-encoding=UTF-8
+*.cjs text eol=lf working-tree-encoding=UTF-8
+*.css text eol=lf working-tree-encoding=UTF-8
+*.html text eol=lf working-tree-encoding=UTF-8
+*.md text eol=lf working-tree-encoding=UTF-8
+*.json text eol=lf working-tree-encoding=UTF-8
+*.yml text eol=lf working-tree-encoding=UTF-8
+*.yaml text eol=lf working-tree-encoding=UTF-8
+*.py text eol=lf working-tree-encoding=UTF-8
+*.toml text eol=lf working-tree-encoding=UTF-8
+*.sh text eol=lf working-tree-encoding=UTF-8
+*.txt text eol=lf working-tree-encoding=UTF-8
+*.svg text eol=lf working-tree-encoding=UTF-8
+*.xml text eol=lf working-tree-encoding=UTF-8
+*.ini text eol=lf working-tree-encoding=UTF-8
+
+# Common extensionless text files in this repo
+LICENSE text eol=lf working-tree-encoding=UTF-8
+
+# Windows scripts keep CRLF
+*.bat text eol=crlf working-tree-encoding=UTF-8
+*.cmd text eol=crlf working-tree-encoding=UTF-8
+*.ps1 text eol=crlf working-tree-encoding=UTF-8
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.cur binary
+*.avif binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#141e30;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#243b55;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="iris" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f12711;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5af19;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="url(#bg2)"/>
+  
+  <!-- Eye frame -->
+  <path d="M 80 256 Q 256 100 432 256 Q 256 412 80 256 Z" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Iris -->
+  <circle cx="256" cy="256" r="80" fill="none" stroke="url(#iris)" stroke-width="24"/>
+  
+  <!-- Pupil -->
+  <circle cx="256" cy="256" r="36" fill="#fff"/>
+  
+  <!-- AI Sparkle center -->
+  <path d="M 256 220 Q 256 256 220 256 Q 256 256 256 292 Q 256 256 292 256 Q 256 256 256 220 Z" fill="url(#bg2)"/>
+  
+  <!-- Sparkles around -->
+  <path d="M 400 120 Q 415 120 415 105 Q 415 120 430 120 Q 415 120 415 135 Q 415 120 400 120 Z" fill="#f5af19"/>
+  <path d="M 120 160 Q 130 160 130 150 Q 130 160 140 160 Q 130 160 130 170 Q 130 160 120 160 Z" fill="#fff"/>
+</svg>
