@@ -37,6 +37,7 @@ import datetime
 import hmac
 import ipaddress
 import shutil
+import tempfile
 
 CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
 if CURRENT_DIR not in sys.path:
@@ -111,6 +112,12 @@ def _get_path_env(name, fallback):
         return os.path.abspath(fallback)
     return os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
 
+def _get_optional_path_env(name):
+    raw = str(os.environ.get(name, "") or "").strip()
+    if not raw:
+        return ""
+    return os.path.abspath(os.path.expandvars(os.path.expanduser(raw)))
+
 def _get_executable_env(name, fallback):
     raw = str(os.environ.get(name, "") or "").strip()
     if not raw:
@@ -167,16 +174,20 @@ _smart_clip_lock = threading.Lock()
 
 # --- 可配置的数据目录，默认位于 v2/ 下 ---
 DEFAULT_USER_DIR = _get_path_env("AIC_USER_DIR", os.path.join(DIRECTORY, "user"))
+DEFAULT_CANVAS_DIR = _get_path_env("AIC_CANVAS_DIR", os.path.join(DEFAULT_USER_DIR, "Canvas Project"))
 DEFAULT_OUTPUT_DIR = _get_path_env("AIC_OUTPUT_DIR", os.path.join(DIRECTORY, "output"))
 DEFAULT_UPLOADS_DIR = _get_path_env("AIC_UPLOADS_DIR", os.path.join(DIRECTORY, "data", "uploads"))
 DEFAULT_ASSETS_DIR = _get_path_env("AIC_ASSETS_DIR", os.path.join(DIRECTORY, "data", "assets"))
 DEFAULT_WORKFLOWS_DIR = _get_path_env("AIC_WORKFLOWS_DIR", os.path.join(DIRECTORY, "data", "workflows"))
+LEGACY_DEFAULT_CANVAS_DIR = _get_optional_path_env("AIC_LEGACY_CANVAS_DIR")
+LEGACY_DEFAULT_OUTPUT_DIR = _get_optional_path_env("AIC_LEGACY_OUTPUT_DIR")
+LEGACY_DEFAULT_UPLOADS_DIR = _get_optional_path_env("AIC_LEGACY_UPLOADS_DIR")
 FFMPEG_EXE = _get_executable_env("AIC_FFMPEG_EXE", "ffmpeg")
 FFPROBE_EXE = _get_executable_env("AIC_FFPROBE_EXE", "ffprobe")
 SYSTEM_FILE_SAVE_PATHS_ENABLED = bool(str(os.environ.get("AIC_USER_DIR", "") or "").strip())
 
 USER_DIR       = DEFAULT_USER_DIR
-CANVAS_DIR     = os.path.join(USER_DIR,  "Canvas Project")
+CANVAS_DIR     = DEFAULT_CANVAS_DIR
 ASSETS_DIR     = DEFAULT_ASSETS_DIR
 ASSET_THUMBS_DIR = os.path.join(ASSETS_DIR, "thumbs")
 WORKFLOWS_DIR  = DEFAULT_WORKFLOWS_DIR
@@ -280,13 +291,72 @@ def _normalize_storage_dir(raw, fallback):
     value = os.path.expandvars(os.path.expanduser(value))
     return os.path.abspath(value)
 
+def _same_storage_path(a, b):
+    if not a or not b:
+        return False
+    try:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+    except Exception:
+        return False
+
+def _replace_legacy_default_path(raw, legacy_default, next_default):
+    if raw and _same_storage_path(raw, legacy_default):
+        return os.path.abspath(next_default)
+    return raw
+
+def _migrate_legacy_default_file_save_paths(paths):
+    if not isinstance(paths, dict):
+        return paths
+    migrated = dict(paths)
+    replacements = (
+        ("canvasDir", LEGACY_DEFAULT_CANVAS_DIR, DEFAULT_CANVAS_DIR),
+        ("outputDir", LEGACY_DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_DIR),
+        ("tempDir", LEGACY_DEFAULT_UPLOADS_DIR, DEFAULT_UPLOADS_DIR),
+    )
+    changed = False
+    for key, legacy_default, next_default in replacements:
+        raw = migrated.get(key)
+        next_value = _replace_legacy_default_path(raw, legacy_default, next_default)
+        if next_value != raw:
+            migrated[key] = next_value
+            changed = True
+    return migrated if changed else paths
+
+def _is_path_inside_system_temp(path_value):
+    if not path_value:
+        return False
+    try:
+        candidate = os.path.normcase(os.path.abspath(path_value))
+        temp_root = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+        return os.path.commonpath([candidate, temp_root]) == temp_root
+    except Exception:
+        return False
+
+def _is_path_policy_test_residue(path_value):
+    if not _is_path_inside_system_temp(path_value):
+        return False
+    normalized = os.path.normcase(os.path.abspath(path_value)).replace("\\", "/")
+    return "/aicanvas-path-policy-test/" in normalized or normalized.endswith("/aicanvas-path-policy-test")
+
+def _should_ignore_system_file_save_paths(paths):
+    if not SYSTEM_FILE_SAVE_PATHS_ENABLED or not isinstance(paths, dict):
+        return False
+    values = (
+        paths.get("canvasDir"),
+        paths.get("outputDir"),
+        paths.get("tempDir"),
+    )
+    return any(_is_path_policy_test_residue(value) for value in values)
+
 
 def _file_save_paths_from_settings(settings):
     src = settings.get("fileSavePaths") if isinstance(settings, dict) else {}
     if not isinstance(src, dict):
         src = {}
+    src = _migrate_legacy_default_file_save_paths(src)
     return {
         "userDir": _normalize_storage_dir(src.get("userDir"), DEFAULT_USER_DIR),
+        "canvasDir": _normalize_storage_dir(src.get("canvasDir"), CANVAS_DIR),
         "outputDir": _normalize_storage_dir(src.get("outputDir"), DEFAULT_OUTPUT_DIR),
         "tempDir": _normalize_storage_dir(src.get("tempDir"), DEFAULT_UPLOADS_DIR),
     }
@@ -301,6 +371,7 @@ def _normalize_file_save_paths_for_policy(paths):
 def _current_file_save_paths():
     return {
         "userDir": os.path.abspath(USER_DIR),
+        "canvasDir": os.path.abspath(CANVAS_DIR),
         "outputDir": os.path.abspath(OUTPUT_DIR),
         "tempDir": os.path.abspath(UPLOADS_DIR),
     }
@@ -325,6 +396,7 @@ def _validate_file_save_paths(paths):
     normalized = _normalize_file_save_paths_for_policy(paths)
     for label, p in (
         ("用户设置保存路径", normalized["userDir"]),
+        ("画布项目保存路径", normalized["canvasDir"]),
         ("输出文件保存路径", normalized["outputDir"]),
         ("临时文件保存路径", normalized["tempDir"]),
     ):
@@ -371,7 +443,7 @@ def _refresh_storage_globals(paths):
     global USER_DIR, CANVAS_DIR, UPLOADS_DIR, OUTPUT_DIR, CONFIG_FILE, SETTINGS_FILE
     global GEN_SEQ_STATE_FILE, DREAMINA_CLI_SERVICE, DREAMINA_ROUTE_SERVICE
     USER_DIR = os.path.abspath(paths["userDir"])
-    CANVAS_DIR = os.path.join(USER_DIR, "Canvas Project")
+    CANVAS_DIR = os.path.abspath(paths.get("canvasDir") or DEFAULT_CANVAS_DIR)
     UPLOADS_DIR = os.path.abspath(paths["tempDir"])
     OUTPUT_DIR = os.path.abspath(paths["outputDir"])
     CONFIG_FILE = os.path.join(USER_DIR, "config.json")
@@ -402,6 +474,7 @@ def _apply_file_save_paths(paths, migrate=False):
         os.makedirs(p, exist_ok=True)
     if migrate:
         _copy_missing_tree(previous["userDir"], normalized["userDir"])
+        _copy_missing_tree(previous["canvasDir"], normalized["canvasDir"])
         _copy_missing_tree(previous["outputDir"], normalized["outputDir"])
         _copy_missing_tree(previous["tempDir"], normalized["tempDir"])
     _refresh_storage_globals(normalized)
@@ -466,7 +539,9 @@ _startup_system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
 _startup_local_settings = _read_json_file(os.path.join(DEFAULT_USER_DIR, "settings.json"), {})
 _startup_settings = dict(_startup_local_settings)
 if SYSTEM_FILE_SAVE_PATHS_ENABLED and isinstance(_startup_system_settings.get("fileSavePaths"), dict):
-    _startup_settings["fileSavePaths"] = _startup_system_settings.get("fileSavePaths")
+    _startup_system_file_save_paths = _startup_system_settings.get("fileSavePaths")
+    if not _should_ignore_system_file_save_paths(_startup_system_file_save_paths):
+        _startup_settings["fileSavePaths"] = _startup_system_file_save_paths
 try:
     _apply_file_save_paths(
         _normalize_file_save_paths_for_policy(_startup_settings.get("fileSavePaths")),
@@ -502,7 +577,9 @@ def _read_user_settings():
     local_install_id = str(local_settings.get("installId") or "").strip()
     system_file_save_paths = None
     if SYSTEM_FILE_SAVE_PATHS_ENABLED and isinstance(system_settings.get("fileSavePaths"), dict):
-        system_file_save_paths = system_settings.get("fileSavePaths")
+        candidate_paths = system_settings.get("fileSavePaths")
+        if not _should_ignore_system_file_save_paths(candidate_paths):
+            system_file_save_paths = candidate_paths
 
     # 兼容旧版本：首次读到仓库内 settings.json 的 installId 时自动迁移到系统目录。
     if not system_install_id and local_install_id:
@@ -654,6 +731,7 @@ _SENSITIVE_API_PREFIXES = (
     "/api/v2/runninghubwf",
     "/api/v2/save_output",
     "/api/v2/save_output_from_url",
+    "/api/v2/output-files",
     "/api/v2/subscription/activate",
     "/api/v2/update/apply",
     "/api/v2/user",
@@ -801,12 +879,14 @@ def _read_body(handler, max_bytes=None):
 MEDIA_FILE_ROUTE_SERVICE = MediaFileRouteService(
     directory=DIRECTORY,
     uploads_dir_getter=lambda: UPLOADS_DIR,
+    user_dir_getter=lambda: USER_DIR,
     output_dir_getter=lambda: OUTPUT_DIR,
     max_upload_bytes=MAX_UPLOAD_BYTES,
     next_output_filename=lambda ext: _next_gen_output_filename(ext),
     load_json_file=lambda path: _load_json_file(path),
     atomic_write_json=lambda path, data: _atomic_write_json(path, data),
     read_body=_read_body,
+    ffprobe_getter=lambda: FFPROBE_EXE,
     image_derivative_display_max_edge=IMAGE_DERIVATIVE_DISPLAY_MAX_EDGE,
     image_derivative_thumb_max_edge=IMAGE_DERIVATIVE_THUMB_MAX_EDGE,
     image_derivative_display_quality=IMAGE_DERIVATIVE_DISPLAY_QUALITY,

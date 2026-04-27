@@ -3,6 +3,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -11,6 +12,12 @@ import urllib.request
 
 GRID_TILE_MAX_AXIS = 10
 GRID_TILE_MAX_COUNT = 100
+
+IMAGE_EXTENSIONS = frozenset((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".avif"))
+VIDEO_EXTENSIONS = frozenset((".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv"))
+AUDIO_EXTENSIONS = frozenset((".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".webm"))
+OUTPUT_INDEX_FILENAME = ".output_index.json"
+OUTPUT_INDEX_VERSION = 1
 
 
 class MediaFileRouteService:
@@ -25,6 +32,8 @@ class MediaFileRouteService:
         load_json_file,
         atomic_write_json,
         read_body,
+        user_dir_getter=None,
+        ffprobe_getter=lambda: "ffprobe",
         image_derivative_display_max_edge=1280,
         image_derivative_thumb_max_edge=320,
         image_derivative_display_quality=78,
@@ -33,12 +42,14 @@ class MediaFileRouteService:
     ):
         self.directory = os.path.abspath(directory)
         self._get_uploads_dir = uploads_dir_getter
+        self._get_user_dir = user_dir_getter or (lambda: self.directory)
         self._get_output_dir = output_dir_getter
         self.max_upload_bytes = int(max_upload_bytes or 0)
         self._next_output_filename = next_output_filename
         self._load_json_file = load_json_file
         self._atomic_write_json = atomic_write_json
         self._read_body = read_body
+        self._get_ffprobe = ffprobe_getter
         self.image_derivative_display_max_edge = int(image_derivative_display_max_edge)
         self.image_derivative_thumb_max_edge = int(image_derivative_thumb_max_edge)
         self.image_derivative_display_quality = int(image_derivative_display_quality)
@@ -116,6 +127,26 @@ class MediaFileRouteService:
 
     def _output_dir(self):
         return os.path.abspath(self._get_output_dir())
+
+    def _user_dir(self):
+        return os.path.abspath(self._get_user_dir())
+
+    def _output_index_file(self):
+        return os.path.join(self._user_dir(), OUTPUT_INDEX_FILENAME)
+
+    def _ffprobe(self):
+        return str(self._get_ffprobe() or "ffprobe")
+
+    @classmethod
+    def _classify_media_kind(cls, filename):
+        ext = os.path.splitext(str(filename or "").lower())[1]
+        if ext in IMAGE_EXTENSIONS:
+            return "image"
+        if ext in VIDEO_EXTENSIONS:
+            return "video"
+        if ext in AUDIO_EXTENSIONS:
+            return "audio"
+        return "file"
 
     def resolve_virtual_media_root(self, local_path=None, abs_path=None):
         norm_local = self._normalize_posix_rel_path(local_path)
@@ -789,6 +820,303 @@ class MediaFileRouteService:
             )
         except Exception as exc:
             return self._json_err(500, f"grid_tiles crop failed: {str(exc)}")
+
+    def _resolve_output_list_dir(self, dir_value):
+        rel = self._normalize_posix_rel_path(dir_value)
+        norm = os.path.normpath(rel).replace("\\", "/")
+        if norm in ("", "."):
+            norm = ""
+        if norm.startswith("../") or norm == ".." or "/../" in f"/{norm}/":
+            return None, None
+        output_dir = self._output_dir()
+        abs_dir = os.path.abspath(os.path.join(output_dir, *([p for p in norm.split("/") if p] or [])))
+        if not self._is_path_inside(abs_dir, output_dir):
+            return None, None
+        return abs_dir, norm
+
+    def _handle_output_files_list(self, handler):
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(handler.path).query)
+        dir_value = qs.get("dir", [""])[0]
+        order = str(qs.get("order", ["desc"])[0] or "desc").lower()
+        if order not in ("asc", "desc"):
+            order = "desc"
+
+        abs_dir, rel_dir = self._resolve_output_list_dir(dir_value)
+        if not abs_dir:
+            return self._json_err(400, "Invalid output directory")
+        if not os.path.isdir(abs_dir):
+            return self._json_err(404, "Output directory not found")
+
+        items = []
+        try:
+            names = os.listdir(abs_dir)
+        except Exception as exc:
+            return self._json_err(500, f"List output failed: {str(exc)}")
+
+        output_root = os.path.abspath(self._output_dir())
+        output_index = self._load_output_index()
+        root_index = self._ensure_output_index_root(output_index, output_root)
+        changed_index = False
+        current_local_paths = set()
+
+        for name in names:
+            if not name or name.startswith("."):
+                continue
+            abs_path = os.path.abspath(os.path.join(abs_dir, name))
+            if not self._is_path_inside(abs_path, self._output_dir()):
+                continue
+            rel_path = "/".join([p for p in (rel_dir, name) if p]).replace("\\", "/")
+            local_path = self._join_virtual_local_path("output", rel_path)
+            try:
+                stat = os.stat(abs_path)
+            except OSError:
+                continue
+            is_dir = os.path.isdir(abs_path)
+            media_kind = "folder" if is_dir else self._classify_media_kind(name)
+            size = 0 if is_dir else int(stat.st_size)
+            mtime = int(stat.st_mtime * 1000)
+            item = {
+                "name": name,
+                "kind": "directory" if is_dir else "file",
+                "isDir": bool(is_dir),
+                "dir": rel_path if is_dir else "",
+                "relPath": rel_path,
+                "localPath": local_path,
+                "url": "" if is_dir else f"/{local_path}",
+                "size": size,
+                "mtime": mtime,
+                "mediaKind": media_kind,
+            }
+            if not is_dir and media_kind in ("image", "video"):
+                current_local_paths.add(local_path)
+                cached = self._get_output_index_item(root_index, local_path, media_kind, size, mtime)
+                if cached is None:
+                    cached = self._build_output_index_item(abs_path, local_path, media_kind, size, mtime)
+                    if cached is not None:
+                        root_index["items"][local_path] = cached
+                        changed_index = True
+                if cached is not None:
+                    item.update(self._output_index_item_to_media_payload(cached))
+            items.append(item)
+
+        changed_index = self._prune_output_index_for_directory(
+            root_index,
+            rel_dir,
+            current_local_paths,
+        ) or changed_index
+        if changed_index:
+            self._save_output_index(output_index)
+
+        reverse = order == "desc"
+        items.sort(
+            key=lambda item: (
+                0 if item["isDir"] else 1,
+                -int(item["mtime"]) if reverse else int(item["mtime"]),
+                str(item["name"]).lower(),
+            )
+        )
+
+        parent = ""
+        if rel_dir:
+            parent = os.path.dirname(rel_dir).replace("\\", "/")
+            if parent == ".":
+                parent = ""
+        parts = [part for part in rel_dir.split("/") if part]
+        breadcrumbs = [{"name": "output", "dir": ""}]
+        acc = []
+        for part in parts:
+            acc.append(part)
+            breadcrumbs.append({"name": part, "dir": "/".join(acc)})
+
+        return self._json_ok(
+            {
+                "success": True,
+                "root": "output",
+                "dir": rel_dir,
+                "parent": parent,
+                "order": order,
+                "breadcrumbs": breadcrumbs,
+                "items": items,
+            }
+        )
+
+    def _load_output_index(self):
+        data = self._load_json_file(self._output_index_file())
+        if not isinstance(data, dict):
+            data = {}
+        if data.get("version") != OUTPUT_INDEX_VERSION:
+            return {"version": OUTPUT_INDEX_VERSION, "roots": {}}
+        roots = data.get("roots")
+        if not isinstance(roots, dict):
+            data["roots"] = {}
+        return data
+
+    def _save_output_index(self, data):
+        payload = data if isinstance(data, dict) else {}
+        payload["version"] = OUTPUT_INDEX_VERSION
+        if not isinstance(payload.get("roots"), dict):
+            payload["roots"] = {}
+        try:
+            self._atomic_write_json(self._output_index_file(), payload)
+        except Exception:
+            pass
+
+    def _ensure_output_index_root(self, index_data, output_root):
+        roots = index_data.get("roots")
+        if not isinstance(roots, dict):
+            roots = {}
+            index_data["roots"] = roots
+        key = os.path.abspath(output_root)
+        root_index = roots.get(key)
+        if not isinstance(root_index, dict):
+            root_index = {}
+            roots[key] = root_index
+        if not isinstance(root_index.get("items"), dict):
+            root_index["items"] = {}
+        root_index["outputRoot"] = key
+        return root_index
+
+    def _get_output_index_item(self, root_index, local_path, media_kind, size, mtime):
+        items = root_index.get("items") if isinstance(root_index, dict) else {}
+        cached = items.get(local_path) if isinstance(items, dict) else None
+        if not isinstance(cached, dict):
+            return None
+        if str(cached.get("mediaKind") or "") != media_kind:
+            return None
+        if str(cached.get("localPath") or "") != local_path:
+            return None
+        if int(cached.get("size") or -1) != int(size):
+            return None
+        if int(cached.get("mtime") or -1) != int(mtime):
+            return None
+        return cached
+
+    def _build_output_index_item(self, abs_path, local_path, media_kind, size, mtime):
+        media_payload = self._read_output_media_dimensions(abs_path, media_kind)
+        if not media_payload:
+            return None
+        item = {
+            "mediaKind": media_kind,
+            "localPath": local_path,
+            "size": int(size),
+            "mtime": int(mtime),
+            "indexedAt": int(time.time() * 1000),
+        }
+        item.update(media_payload)
+        return item
+
+    @staticmethod
+    def _output_index_item_to_media_payload(cached):
+        payload = {}
+        for key in (
+            "width",
+            "height",
+            "originalWidth",
+            "originalHeight",
+            "videoWidth",
+            "videoHeight",
+            "duration",
+            "thumbLocalPath",
+            "displayLocalPath",
+        ):
+            if cached.get(key) not in (None, ""):
+                payload[key] = cached.get(key)
+        return payload
+
+    def _prune_output_index_for_directory(self, root_index, rel_dir, current_local_paths):
+        items = root_index.get("items")
+        if not isinstance(items, dict):
+            root_index["items"] = {}
+            return True
+        dir_prefix = self._join_virtual_local_path("output", rel_dir)
+        dir_prefix = dir_prefix.rstrip("/")
+        if dir_prefix:
+            prefix = f"{dir_prefix}/"
+        else:
+            prefix = "output/"
+        changed = False
+        for local_path in list(items.keys()):
+            if not str(local_path).startswith(prefix):
+                continue
+            rel = str(local_path)[len(prefix) :]
+            if "/" in rel:
+                continue
+            if local_path not in current_local_paths:
+                del items[local_path]
+                changed = True
+        return changed
+
+    def _read_output_media_dimensions(self, abs_path, media_kind):
+        if media_kind == "image":
+            try:
+                from PIL import Image, ImageOps
+
+                with Image.open(abs_path) as opened:
+                    img = ImageOps.exif_transpose(opened)
+                    width, height = img.size
+                if width > 0 and height > 0:
+                    return {
+                        "width": int(width),
+                        "height": int(height),
+                        "originalWidth": int(width),
+                        "originalHeight": int(height),
+                    }
+            except Exception:
+                return {}
+        if media_kind == "video":
+            try:
+                startupinfo = None
+                if os.name == "nt":
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                proc = subprocess.run(
+                    [
+                        self._ffprobe(),
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "v:0",
+                        "-show_entries",
+                        "stream=width,height,duration",
+                        "-of",
+                        "json",
+                        abs_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    startupinfo=startupinfo,
+                )
+                if proc.returncode != 0:
+                    return {}
+                data = json.loads(proc.stdout or "{}")
+                streams = data.get("streams") if isinstance(data, dict) else []
+                stream = streams[0] if isinstance(streams, list) and streams else {}
+                width = int(float(stream.get("width") or 0))
+                height = int(float(stream.get("height") or 0))
+                duration = float(stream.get("duration") or 0)
+                payload = {}
+                if width > 0 and height > 0:
+                    payload.update(
+                        {
+                            "width": width,
+                            "height": height,
+                            "videoWidth": width,
+                            "videoHeight": height,
+                        }
+                    )
+                if duration > 0:
+                    payload["duration"] = duration
+                return payload
+            except Exception:
+                return {}
+        return {}
+
+    def handle_get(self, handler, path):
+        if path == "/api/v2/output-files":
+            return self._handle_output_files_list(handler)
+
+        return None
 
     def handle_post(self, handler, path):
         if path == "/api/upload":

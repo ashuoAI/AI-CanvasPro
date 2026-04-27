@@ -264,6 +264,14 @@ class HttpRouteDispatcher:
             self._send_route_response(handler, dreamina_get_response)
             return True
 
+        media_file_get_response = self._get_media_file_route_service().handle_get(
+            handler,
+            path,
+        )
+        if media_file_get_response is not None:
+            self._send_route_response(handler, media_file_get_response)
+            return True
+
         if path == "/api/v2/heartbeat_stream":
             return self._handle_heartbeat_stream(handler)
 

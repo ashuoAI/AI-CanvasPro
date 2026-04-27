@@ -217,6 +217,9 @@ class JsonFileRouteService:
         kind = self._first_query_value(query, "kind")
         project_id = self._first_query_value(query, "projectId")
         media_kind = self._first_query_value(query, "mediaKind")
+        order = str(self._first_query_value(query, "order", "desc") or "desc").lower()
+        if order not in ("asc", "desc"):
+            order = "desc"
         offset = self._parse_int(self._first_query_value(query, "offset", "0"), 0, min_value=0)
         limit = self._parse_int(
             self._first_query_value(query, "limit", "80"),
@@ -239,7 +242,7 @@ class JsonFileRouteService:
 
         filtered.sort(
             key=lambda item: float(item.get("updatedAt") or item.get("createdAt") or 0),
-            reverse=True,
+            reverse=order == "desc",
         )
         total = len(filtered)
         items = filtered[offset : offset + limit]

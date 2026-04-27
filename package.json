@@ -1,7 +1,7 @@
 {
   "name": "ai-canvaspro",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.0.1",
   "description": "AI CanvasPro desktop editor",
   "author": "AI CanvasPro",
   "type": "module",
@@ -19,10 +19,11 @@
     "perf:collect": "playwright test e2e/perf.spec.js --project=chromium-smoke",
     "perf:guard": "node tools/perf_guard.cjs",
     "perf:baseline:update": "node tools/perf_baseline_update.cjs",
+    "build:obfuscated": "node tools/create-obfuscated-dist.cjs",
     "electron": "electron electron/main.js",
     "electron:prepare-runtime:win": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\\tools\\Prepare-ElectronRuntimeWin.ps1",
-    "electron:pack:win": "electron-builder --win dir zip nsis",
-    "electron:publish:win": "electron-builder --win zip nsis --publish always",
+    "electron:pack:win": "electron-builder --win nsis",
+    "electron:publish:win": "electron-builder --win nsis --publish always",
     "precommit:check": "npm run check:architecture && npm run check:encoding && npm run test:critical && npm run test:storyboard && npm run test:e2e:smoke",
     "prepare": "husky"
   },
@@ -50,11 +51,11 @@
       "styles/**/*",
       "vendor/**/*",
       "index.html",
+      "style.css",
       "main.js",
       "server.py",
       "requirements.txt",
       "release_notes.txt",
-      "release_video_url.txt",
       "package.json"
     ],
     "extraResources": [
@@ -78,8 +79,6 @@
       "icon": "build/app-icon.ico",
       "executableName": "AI CanvasPro",
       "target": [
-        "dir",
-        "zip",
         "nsis"
       ]
     },

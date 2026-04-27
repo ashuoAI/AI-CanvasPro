@@ -30,7 +30,7 @@ class DreaminaCliService:
         self._workspace_dir = os.path.dirname(self._user_dir)
         self._output_root_dir = os.path.abspath(output_root_dir) if output_root_dir else os.path.join(self._workspace_dir, "output")
         self._dreamina_output_root = os.path.join(self._output_root_dir, "dreamina")
-        self._dreamina_video_output_dir = os.path.join(self._output_root_dir, "dreamina_video")
+        self._dreamina_video_output_dir = self._output_root_dir
         self._dreamina_download_tmp_root = os.path.join(self._user_dir, "dreamina_downloads")
         self._managed_dir = os.path.join(self._user_dir, "tools", "dreamina")
         self._managed_command_path = os.path.join(

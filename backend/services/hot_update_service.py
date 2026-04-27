@@ -12,6 +12,10 @@ import urllib.request
 class HotUpdateService:
     LOCAL_RELEASE_NOTES_FALLBACK = "本次更新未提供详细说明，请享受最新版本！"
     LOCAL_PREVIEW_VIDEO_FILE = "release_video_url.txt"
+    RELEASE_NOTES_PREVIEW_VIDEO_RE = re.compile(
+        r"^\[previewVideoUrl\]\s*:\s*(\S+)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
 
     def __init__(
         self,
@@ -182,9 +186,19 @@ class HotUpdateService:
         except Exception:
             return self.LOCAL_RELEASE_NOTES_FALLBACK
         notes = re.split(r"^---\s*$", raw_notes, maxsplit=1, flags=re.MULTILINE)[0].strip()
+        notes = self.RELEASE_NOTES_PREVIEW_VIDEO_RE.sub("", notes).strip()
         return notes or self.LOCAL_RELEASE_NOTES_FALLBACK
 
     def read_local_preview_video_url(self):
+        notes_path = os.path.join(self.directory, "release_notes.txt")
+        try:
+            with open(notes_path, "r", encoding="utf-8") as file:
+                match = self.RELEASE_NOTES_PREVIEW_VIDEO_RE.search(file.read())
+                if match:
+                    return match.group(1).strip()
+        except Exception:
+            pass
+
         video_path = os.path.join(self.directory, self.LOCAL_PREVIEW_VIDEO_FILE)
         try:
             with open(video_path, "r", encoding="utf-8") as file:
