@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 class JsonFileRouteService:
@@ -15,6 +15,7 @@ class JsonFileRouteService:
         read_user_settings,
         write_user_settings,
         atomic_write_json,
+        output_dir_getter=None,
     ):
         self._get_canvas_dir = canvas_dir_getter
         self._get_assets_dir = assets_dir_getter
@@ -23,6 +24,7 @@ class JsonFileRouteService:
         self._read_user_settings = read_user_settings
         self._write_user_settings = write_user_settings
         self._atomic_write_json = atomic_write_json
+        self._get_output_dir = output_dir_getter
 
     @staticmethod
     def _json_ok(data):
@@ -121,6 +123,134 @@ class JsonFileRouteService:
                         data["id"] = filename[:-5]
                     items.append(data)
         return items
+
+    @staticmethod
+    def _first_query_value(query, key, default=""):
+        values = query.get(str(key)) or []
+        if not values:
+            return default
+        return str(values[0] or "").strip()
+
+    @staticmethod
+    def _parse_int(value, default, *, min_value=None, max_value=None):
+        try:
+            next_value = int(str(value).strip())
+        except Exception:
+            next_value = int(default)
+        if min_value is not None:
+            next_value = max(int(min_value), next_value)
+        if max_value is not None:
+            next_value = min(int(max_value), next_value)
+        return next_value
+
+    @staticmethod
+    def _normalize_virtual_path(value):
+        text = str(value or "").strip().replace("\\", "/")
+        if not text:
+            return ""
+        parsed = urlparse(text)
+        if parsed.scheme in ("http", "https", "blob", "data", "file", "javascript"):
+            return ""
+        if parsed.scheme and not text.startswith("/"):
+            return ""
+        return unquote(text).strip().lstrip("/")
+
+    @classmethod
+    def _asset_primary_media_paths(cls, asset):
+        paths = []
+
+        def push(value):
+            text = str(value or "").strip()
+            if text:
+                paths.append(text)
+
+        node = None
+        nodes = asset.get("nodes") if isinstance(asset, dict) else None
+        if isinstance(nodes, list) and nodes:
+            node = nodes[0] if isinstance(nodes[0], dict) else None
+        if isinstance(node, dict):
+            for key in ("localPath", "videoUrl", "audioUrl", "imageUrl"):
+                push(node.get(key))
+
+        push(asset.get("coverUrl") if isinstance(asset, dict) else "")
+        items = asset.get("items") if isinstance(asset, dict) else None
+        if isinstance(items, list) and items:
+            first_item = items[0] if isinstance(items[0], dict) else None
+            if isinstance(first_item, dict):
+                push(first_item.get("thumbSrc"))
+        return paths
+
+    def _output_virtual_path_exists(self, virtual_path):
+        local_path = self._normalize_virtual_path(virtual_path)
+        if not local_path.startswith("output/"):
+            return True
+        if not self._get_output_dir:
+            return True
+        output_dir = os.path.abspath(self._get_output_dir())
+        rel_path = local_path[len("output/") :].lstrip("/")
+        abs_path = os.path.abspath(os.path.join(output_dir, *rel_path.split("/")))
+        try:
+            if os.path.commonpath([abs_path, output_dir]) != output_dir:
+                return False
+        except Exception:
+            return False
+        return os.path.exists(abs_path)
+
+    def _generation_history_media_exists(self, asset):
+        if not isinstance(asset, dict):
+            return False
+        if str(asset.get("kind") or "").strip() != "generation-history":
+            return True
+        for path in self._asset_primary_media_paths(asset):
+            local_path = self._normalize_virtual_path(path)
+            if local_path.startswith("output/"):
+                return self._output_virtual_path_exists(local_path)
+        return True
+
+    def _list_assets(self, handler, path):
+        assets = self._list_json_objects(self._get_assets_dir(), id_from_filename=True)
+        raw_query = getattr(handler, "path", path) if handler is not None else path
+        query = parse_qs(urlparse(str(raw_query or "")).query, keep_blank_values=True)
+        if not query:
+            return assets
+
+        kind = self._first_query_value(query, "kind")
+        project_id = self._first_query_value(query, "projectId")
+        media_kind = self._first_query_value(query, "mediaKind")
+        offset = self._parse_int(self._first_query_value(query, "offset", "0"), 0, min_value=0)
+        limit = self._parse_int(
+            self._first_query_value(query, "limit", "80"),
+            80,
+            min_value=1,
+            max_value=200,
+        )
+
+        filtered = []
+        for asset in assets:
+            if kind and str(asset.get("kind") or "").strip() != kind:
+                continue
+            if project_id and str(asset.get("projectId") or "").strip() != project_id:
+                continue
+            if media_kind and str(asset.get("mediaKind") or "").strip().lower() != media_kind.lower():
+                continue
+            if not self._generation_history_media_exists(asset):
+                continue
+            filtered.append(asset)
+
+        filtered.sort(
+            key=lambda item: float(item.get("updatedAt") or item.get("createdAt") or 0),
+            reverse=True,
+        )
+        total = len(filtered)
+        items = filtered[offset : offset + limit]
+        next_offset = offset + len(items)
+        has_more = next_offset < total
+        return {
+            "items": items,
+            "total": total,
+            "nextOffset": next_offset if has_more else None,
+            "hasMore": has_more,
+        }
 
     def _load_user_json(self, path):
         filename = path[len("/api/v2/user/") :]
@@ -235,9 +365,7 @@ class JsonFileRouteService:
             return self._load_project(path)
 
         if path == "/api/v2/assets":
-            return self._json_ok(
-                self._list_json_objects(self._get_assets_dir(), id_from_filename=True)
-            )
+            return self._json_ok(self._list_assets(handler, path))
 
         if path == "/api/v2/workflows":
             return self._json_ok(
@@ -279,6 +407,14 @@ class JsonFileRouteService:
                 prefix="/api/v2/assets/",
                 directory=self._get_assets_dir(),
                 not_found_message="Asset not found",
+            )
+
+        if path.startswith("/api/v2/workflows/"):
+            return self._delete_json_file(
+                path,
+                prefix="/api/v2/workflows/",
+                directory=self._get_workflows_dir(),
+                not_found_message="Workflow not found",
             )
 
         return None

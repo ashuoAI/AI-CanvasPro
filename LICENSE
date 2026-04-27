@@ -1,21 +1,54 @@
-MIT License
+AI CanvasPro Dual License
 
-Copyright (c) 2026 AI Canvas 作者
+Copyright (c) 2026 AI CanvasPro
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+本项目采用双许可证模式。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+一、非商业源码许可
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+在未获得版权方单独书面商业授权的情况下，任何个人或组织仅可将本项目及其源代码用于个人学习、研究、评估和非商业用途。
+
+在非商业用途下，你可以：
+
+1. 查看、阅读和学习本项目源代码；
+2. 在非商业环境中运行本项目；
+3. 为个人学习、研究或评估目的修改本项目；
+4. 在保留本许可证和版权声明的前提下，分享非商业用途的修改版本。
+
+二、商业许可
+
+任何商业用途必须事先获得版权方的单独书面授权。未经授权，任何个人或组织不得将本项目或其衍生作品用于商业用途。
+
+商业用途包括但不限于：
+
+1. 销售、出租、转售本项目或其衍生版本；
+2. 将本项目或其衍生版本集成到商业产品、收费软件、付费插件或商业服务中；
+3. 以 SaaS、托管服务、云服务、API 服务、企业内部生产系统等方式使用本项目；
+4. 使用本项目或其衍生版本向客户、企业、团队或第三方提供收费服务；
+5. 通过本项目或其衍生版本获得直接或间接商业收益，包括但不限于广告、订阅、授权、咨询、交付、外包或增值服务收益。
+
+商业授权条款、授权范围、费用、期限、地域、交付形式和技术支持等内容，以双方另行签署的书面商业许可协议为准。
+
+三、权利保留
+
+版权方保留对本项目进行商业使用、商业授权、再许可、闭源发布和其他处分的全部权利。
+
+除本许可证明确授予的权利外，版权方未授予任何其他权利。
+
+四、第三方组件
+
+本项目可能包含或依赖第三方开源软件、素材、模型、字体、图标或其他资源。第三方组件适用其各自的许可证或授权条款。
+
+本许可证仅适用于版权方拥有权利的项目代码和资源，不改变第三方组件原有的授权条件。
+
+五、免责声明
+
+本项目按“现状”提供，不提供任何明示或默示担保，包括但不限于适销性、特定用途适用性和不侵权担保。
+
+在适用法律允许的最大范围内，版权方不对因使用、无法使用、本项目缺陷或与本项目相关的任何事项导致的任何直接、间接、偶然、特殊、惩罚性或后果性损害承担责任。
+
+六、解释
+
+本项目不是 OSI 认可意义上的开源项目。本项目源代码公开或可访问，并不表示允许商业使用。
+
+如需商业使用，请联系版权方获取单独书面授权。

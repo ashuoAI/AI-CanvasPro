@@ -370,6 +370,110 @@ class LocalMediaProcessingRouteService:
         except Exception as exc:
             return self._json_err(500, f"Error processing audio: {str(exc)}")
 
+    def _handle_video_separate_audio_video(self, handler):
+        data, error = self._read_json_request(handler)
+        if error is not None:
+            return error
+
+        src_path = (data.get("src") or "").strip()
+        local_src, error = self._validate_src_path(
+            src_path,
+            missing_message="Source video not found",
+        )
+        if error is not None:
+            return error
+
+        try:
+            startupinfo = self._startupinfo()
+            if not self._ffprobe_video_wh(local_src, startupinfo):
+                return self._json_err(400, "Source video has no video stream")
+            if not self._ffprobe_has_audio(local_src, startupinfo):
+                return self._json_err(400, "当前视频没有可分离的音频")
+
+            video_dir = os.path.join(self._output_dir(), "SeparateVideo")
+            audio_dir = os.path.join(self._output_dir(), "SeparateAudio")
+            os.makedirs(video_dir, exist_ok=True)
+            os.makedirs(audio_dir, exist_ok=True)
+
+            video_filename = self._new_filename("video", "mp4")
+            audio_filename = self._new_filename("audio", "mp3")
+            video_path = os.path.join(video_dir, video_filename)
+            audio_path = os.path.join(audio_dir, audio_filename)
+
+            video_cmd = [
+                self._ffmpeg(),
+                "-y",
+                "-i",
+                local_src,
+                "-map",
+                "0:v:0",
+                "-an",
+                "-c:v",
+                "copy",
+                video_path,
+            ]
+            returncode, _, stderr = self._run_process(
+                video_cmd,
+                timeout=300,
+                startupinfo=startupinfo,
+            )
+            if returncode != 0:
+                err_text = (stderr or b"").decode("utf-8", errors="ignore").strip()
+                return self._json_err(
+                    500,
+                    f"FFmpeg video separation failed: {err_text or 'unknown error'}",
+                )
+
+            audio_cmd = [
+                self._ffmpeg(),
+                "-y",
+                "-i",
+                local_src,
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "192k",
+                audio_path,
+            ]
+            returncode, _, stderr = self._run_process(
+                audio_cmd,
+                timeout=300,
+                startupinfo=startupinfo,
+            )
+            if returncode != 0:
+                err_text = (stderr or b"").decode("utf-8", errors="ignore").strip()
+                return self._json_err(
+                    500,
+                    f"FFmpeg audio separation failed: {err_text or 'unknown error'}",
+                )
+
+            video_rel_path = f"output/SeparateVideo/{video_filename}"
+            audio_rel_path = f"output/SeparateAudio/{audio_filename}"
+            return self._json_ok(
+                {
+                    "success": True,
+                    "video": {
+                        "filename": video_filename,
+                        "path": video_rel_path,
+                        "localPath": video_rel_path,
+                        "url": f"/{video_rel_path}",
+                    },
+                    "audio": {
+                        "filename": audio_filename,
+                        "path": audio_rel_path,
+                        "localPath": audio_rel_path,
+                        "url": f"/{audio_rel_path}",
+                    },
+                }
+            )
+        except subprocess.TimeoutExpired:
+            return self._json_err(504, "FFmpeg process timeout")
+        except Exception as exc:
+            return self._json_err(500, f"Error separating video audio: {str(exc)}")
+
     def _handle_video_compose(self, handler):
         data, error = self._read_json_request(handler)
         if error is not None:
@@ -646,6 +750,8 @@ class LocalMediaProcessingRouteService:
             return self._handle_video_cut(handler)
         if normalized == "/api/v2/audio/cut":
             return self._handle_audio_cut(handler)
+        if normalized == "/api/v2/video/separate_audio_video":
+            return self._handle_video_separate_audio_video(handler)
         if normalized == "/api/v2/video/compose":
             return self._handle_video_compose(handler)
         if normalized == "/api/v2/video/meta":

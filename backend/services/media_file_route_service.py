@@ -92,6 +92,25 @@ class MediaFileRouteService:
     def _safe_filename(filename):
         return re.sub(r'[\\/:*?"<>|]', "_", os.path.basename(str(filename or "upload")))
 
+    @staticmethod
+    def _write_unique_upload_file(upload_dir, preferred_filename, file_bytes):
+        safe_fn = MediaFileRouteService._safe_filename(preferred_filename or "upload") or "upload"
+        stem, ext = os.path.splitext(safe_fn)
+        stem = stem or "upload"
+        stamp = int(time.time() * 1000)
+
+        for attempt in range(1000):
+            stored_fn = safe_fn if attempt == 0 else f"{stem}_{stamp}_{attempt:03d}{ext}"
+            fpath = os.path.join(upload_dir, stored_fn)
+            try:
+                with open(fpath, "xb") as file:
+                    file.write(file_bytes)
+                return safe_fn, stored_fn, fpath
+            except FileExistsError:
+                continue
+
+        raise RuntimeError("Unable to allocate unique upload filename")
+
     def _uploads_dir(self):
         return os.path.abspath(self._get_uploads_dir())
 
@@ -333,19 +352,22 @@ class MediaFileRouteService:
             if len(file_bytes) > self.max_upload_bytes:
                 return self._json_err(413, "Upload file too large")
 
-            safe_fn = self._safe_filename(filename or "upload")
-            fpath = os.path.join(self._uploads_dir(), safe_fn)
-            os.makedirs(os.path.dirname(fpath), exist_ok=True)
-            with open(fpath, "wb") as file:
-                file.write(file_bytes)
+            upload_dir = self._uploads_dir()
+            os.makedirs(upload_dir, exist_ok=True)
+            safe_fn, stored_fn, fpath = self._write_unique_upload_file(
+                upload_dir,
+                filename or "upload",
+                file_bytes,
+            )
 
-            local_path = f"data/uploads/{safe_fn}"
+            local_path = f"data/uploads/{stored_fn}"
             return self._json_ok(
                 self.augment_saved_media_response(
                     {
                         "url": f"/{local_path}",
                         "localPath": local_path,
                         "filename": safe_fn,
+                        "storedFilename": stored_fn,
                     },
                     fpath,
                     local_path,
@@ -676,11 +698,6 @@ class MediaFileRouteService:
 
     def _handle_grid_tiles_crop(self, handler):
         try:
-            from PIL import Image, ImageOps
-        except Exception:
-            return self._json_err(500, "Pillow is required")
-
-        try:
             body = self._read_body(handler)
             data, error = self._parse_json_object(body)
             if error is not None:
@@ -708,6 +725,11 @@ class MediaFileRouteService:
             sub_dir = str(data.get("subDir") or "").strip()
             if sub_dir and not re.match(r"^[a-zA-Z0-9 _-]+$", sub_dir):
                 sub_dir = ""
+
+            try:
+                from PIL import Image, ImageOps
+            except Exception:
+                return self._json_err(500, "Pillow is required")
 
             target_dir = os.path.join(self._output_dir(), sub_dir) if sub_dir else self._output_dir()
             rel_dir = f"output/{sub_dir}" if sub_dir else "output"

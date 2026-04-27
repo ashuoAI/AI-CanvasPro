@@ -180,3 +180,8 @@
 
 ***
 
+## 许可证提示
+
+本项目采用双许可证模式：未获得书面商业授权时，仅允许个人学习、研究、评估和非商业使用；任何商业用途均需事先获得作者单独书面授权。
+
+详细条款请查看 [LICENSE](./LICENSE) 和 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)。

@@ -1,18 +1,18 @@
 r"""
-./server.py - AI Canvas V2 ????
+./server.py - AI Canvas V2 本地服务
 
-????:
+用法:
   cd v2
   venv\Scripts\python server.py
 
-?????: http://localhost:8777
+访问地址: http://localhost:8777
 
-??????? v2/ ??:
-  user/Canvas Project/  - ??????
-  user/shortcuts.json   - ?????
-  user/settings.json    - ?????
-  user/config.json      - API Key ??
-  data/uploads/         - ??????
+主要目录位于 v2/ 下:
+  user/Canvas Project/  - 画布项目
+  user/shortcuts.json   - 快捷键配置
+  user/settings.json    - 应用设置
+  user/config.json      - API Key 配置
+  data/uploads/         - 上传文件
 
 """
 
@@ -142,12 +142,12 @@ ALLOWED_ORIGINS = tuple(
 )
 LOCAL_ACCESS_TOKEN = str(os.environ.get("AIC_LOCAL_TOKEN", "") or "").strip()
 DIRECTORY = os.path.abspath(os.path.dirname(__file__))   # v2/ 绝对路径
-# --- ???? ---
-# ? index.html ????
+# --- 版本号 ---
+# 从 index.html 读取版本号
 import re
 
 def get_version_from_index_html():
-    """? index.html ??????"""
+    """从 index.html 读取应用版本号。"""
     index_path = os.path.join(DIRECTORY, "index.html")
     try:
         with open(index_path, 'r', encoding='utf-8') as f:
@@ -158,14 +158,14 @@ def get_version_from_index_html():
             return match.group(1)
     except Exception:
         pass
-    return "V0.0.7"  # ????
+    return "V0.0.7"  # 默认版本
 
-LOCAL_VERSION   = get_version_from_index_html()  # ? index.html ????
+LOCAL_VERSION   = get_version_from_index_html()  # 从 index.html 读取版本号
 _gen_seq_lock   = threading.Lock()
 _smart_clip_jobs = {}
 _smart_clip_lock = threading.Lock()
 
-# --- ???????? v2/ ?? ---
+# --- 可配置的数据目录，默认位于 v2/ 下 ---
 DEFAULT_USER_DIR = _get_path_env("AIC_USER_DIR", os.path.join(DIRECTORY, "user"))
 DEFAULT_OUTPUT_DIR = _get_path_env("AIC_OUTPUT_DIR", os.path.join(DIRECTORY, "output"))
 DEFAULT_UPLOADS_DIR = _get_path_env("AIC_UPLOADS_DIR", os.path.join(DIRECTORY, "data", "uploads"))
@@ -564,6 +564,7 @@ JSON_FILE_ROUTE_SERVICE = JsonFileRouteService(
     read_user_settings=_read_user_settings,
     write_user_settings=_write_user_settings,
     atomic_write_json=lambda path, data: _atomic_write_json(path, data),
+    output_dir_getter=lambda: OUTPUT_DIR,
 )
 LIBRARY_FILE_ROUTE_SERVICE = LibraryFileRouteService(
     user_dir_getter=lambda: USER_DIR,
@@ -639,6 +640,7 @@ def _request_has_valid_local_token(handler):
 
 _SENSITIVE_API_PREFIXES = (
     "/api/config",
+    "/api/projects",
     "/api/upload",
     "/api/v2/assets",
     "/api/v2/chat",
@@ -651,6 +653,7 @@ _SENSITIVE_API_PREFIXES = (
     "/api/v2/proxy",
     "/api/v2/runninghubwf",
     "/api/v2/save_output",
+    "/api/v2/save_output_from_url",
     "/api/v2/subscription/activate",
     "/api/v2/update/apply",
     "/api/v2/user",
@@ -670,6 +673,8 @@ def _is_sensitive_api_path(path):
 def _request_passes_local_security(handler, path):
     if not _is_sensitive_api_path(path):
         return True
+    if LOCAL_ACCESS_TOKEN:
+        return _request_has_valid_local_token(handler)
     origin = handler.headers.get("Origin", "")
     if origin:
         return _is_allowed_origin(handler, origin) or _request_has_valid_local_token(handler)
@@ -1620,7 +1625,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if HTTP_ROUTE_DISPATCHER.handle_get(self, path):
             return
 
-        # --- ???????? SimpleHTTPRequestHandler ??? ---
+        # --- 其余静态资源交给 SimpleHTTPRequestHandler 处理 ---
         try:
             super().do_GET()
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
@@ -1631,6 +1636,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         header_buf = getattr(self, "_headers_buffer", []) or []
         has_cache_control = any(b"Cache-Control:" in h for h in header_buf)
         has_cors = any(b"Access-Control-Allow-Origin:" in h for h in header_buf)
+        has_server_id = any(b"X-AICanvas-Server:" in h for h in header_buf)
+        if not has_server_id:
+            self.send_header("X-AICanvas-Server", "AI CanvasPro")
         if not has_cache_control:
             if _is_cacheable_static_video_request(getattr(self, "path", "")):
                 self.send_header("Cache-Control", "public, max-age=86400")
@@ -2153,7 +2161,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not api_url or not api_key:
                 _json_err(self, 400, "Missing apiUrl or apiKey"); return
             
-            # ?? Gemini ???????????
+            # 兼容 Gemini 和 OpenAI 风格接口
             if ":generateContent" in api_url or "/v1beta/models" in api_url or api_url.endswith("/chat/completions"):
                 endpoint = api_url
             else:
@@ -2170,27 +2178,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 import requests
                 req_body = json.dumps(data)
                 try:
-                    # ??????? 300 ???? aiTextApi.js ??????
+                    # 生成请求允许最长 300 秒，与 aiTextApi.js 保持一致
                     resp = requests.post(endpoint, data=req_body, headers=headers, timeout=300)
                 except requests.exceptions.ConnectionError as ce:
-                    _json_err(self, 502, f"????? AI ???: {str(ce)}")
+                    _json_err(self, 502, f"连接 AI 服务失败: {str(ce)}")
                     return
                 except requests.exceptions.Timeout as te:
-                    _json_err(self, 504, f"AI ???????: {str(te)}")
+                    _json_err(self, 504, f"AI 服务请求超时: {str(te)}")
                     return
                 except requests.exceptions.RequestException as req_err:
-                    _json_err(self, 502, f"AI ???????: {str(req_err)}")
+                    _json_err(self, 502, f"AI 服务请求失败: {str(req_err)}")
                     return
                 
-                # ??????? SSE ??????????? JSON
+                # 兼容返回 SSE 的服务，转换为普通 JSON
                 resp_text = resp.text
                 resp_content_type = resp.headers.get('Content-Type', '')
                 
-                # ?????? text/event-stream ??? data: ??????? JSON
+                # 处理 text/event-stream 或以 data: 开头的响应
                 is_sse = 'text/event-stream' in resp_content_type or resp_text.strip().startswith('data:')
                 if is_sse:
                     try:
-                        # ??? SSE ??????? JSON
+                        # 取 SSE 最后一条有效 JSON
                         lines = [l.strip() for l in resp_text.split('\n') if l.strip().startswith('data:')]
                         if lines:
                             last_line = lines[-1].replace('data:', '').strip()
@@ -2205,7 +2213,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 json_data = json.loads(last_line)
                                 resp_text = json.dumps(json_data)
                     except Exception:
-                        # ?????????????
+                        # 解析失败时保留原始响应
                         pass
                 
                 self.send_response(resp.status_code)
@@ -2223,7 +2231,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         resp_data = resp.read()
                         resp_text = resp_data.decode('utf-8')
                     
-                    # ??????? SSE ??????????? JSON
+                    # 兼容返回 SSE 的服务，转换为普通 JSON
                     if resp_text.strip().startswith('data:'):
                         try:
                             lines = [l.strip() for l in resp_text.split('\n') if l.strip().startswith('data:')]
@@ -2256,7 +2264,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _json_err(self, 500, repr(e))
             return
 
-        # --- ??? AI ????????? OpenAI ????? ---
+        # --- 自定义 AI 聊天接口，兼容 OpenAI 格式 ---
         if path == "/api/v2/chat":
             body = _read_body(self)
             try:
@@ -2267,7 +2275,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             api_key  = data.get("apiKey", "").strip()
             model    = data.get("model", "")
             prompt   = data.get("prompt", "")
-            # apiUrl/apiKey ??????????? config.json ????? AI ??
+            # apiUrl/apiKey 未传时，回退到 config.json 中的自定义 AI 配置
             if not api_url or not api_key:
                 global_cfg = _get_custom_ai_config()
                 api_url = api_url or global_cfg["apiUrl"]
@@ -2275,7 +2283,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not api_url or not api_key or not model or not prompt:
                 _json_err(self, 400, "Missing required fields: apiUrl, apiKey, model, prompt"); return
             
-            # ????????????? /chat/completions ????
+            # 若未指定完整端点，则默认拼接 /chat/completions
             endpoint = api_url if api_url.endswith("/chat/completions") else f"{api_url}/chat/completions"
             
             import urllib.request
@@ -2375,9 +2383,9 @@ def _display_urls(bind_host, port):
     return urls
 
 
-# --- ?? ---
+# --- 启动 ---
 if __name__ == "__main__":
-    # ????????????
+    # 后台启动自动更新检查
     _t = threading.Thread(target=UPDATE_SERVICE.update_check_loop, daemon=True, name='AutoUpdateChecker')
     _t.start()
     port, requested_bind_host, lan_mode = _parse_server_args(sys.argv[1:])
