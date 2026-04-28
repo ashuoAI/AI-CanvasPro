@@ -1,7 +1,7 @@
 {
   "name": "ai-canvaspro",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.3.0",
   "description": "AI CanvasPro desktop editor",
   "author": "AI CanvasPro",
   "type": "module",
@@ -20,9 +20,14 @@
     "perf:guard": "node tools/perf_guard.cjs",
     "perf:baseline:update": "node tools/perf_baseline_update.cjs",
     "build:obfuscated": "node tools/create-obfuscated-dist.cjs",
+    "build:electron-obfuscated": "node tools/create-obfuscated-electron-app.cjs",
     "electron": "electron electron/main.js",
     "electron:prepare-runtime:win": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\\tools\\Prepare-ElectronRuntimeWin.ps1",
+    "electron:size": "node tools/package-size-report.cjs",
     "electron:pack:win": "electron-builder --win nsis",
+    "electron:pack:win:obfuscated": "npm run build:electron-obfuscated -- && electron-builder --win nsis --config electron-builder.obfuscated.cjs",
+    "electron:pack:win:obfuscated:size": "npm run electron:pack:win:obfuscated && npm run electron:size",
+    "electron:pack:win:size": "npm run electron:pack:win && npm run electron:size",
     "electron:publish:win": "electron-builder --win nsis --publish always",
     "precommit:check": "npm run check:architecture && npm run check:encoding && npm run test:critical && npm run test:storyboard && npm run test:e2e:smoke",
     "prepare": "husky"
@@ -56,7 +61,16 @@
       "server.py",
       "requirements.txt",
       "release_notes.txt",
-      "package.json"
+      "package.json",
+      "!**/*.test.js",
+      "!**/*.test.mjs",
+      "!**/*.spec.js",
+      "!**/*.map",
+      "!**/*.pyc",
+      "!**/__pycache__/**",
+      "!**/tests/**",
+      "!**/test-results/**",
+      "!**/playwright-report/**"
     ],
     "extraResources": [
       {
@@ -72,7 +86,7 @@
       {
         "provider": "github",
         "owner": "ashuoAI",
-        "repo": "test-aicanvas"
+        "repo": "AI-CanvasPro"
       }
     ],
     "win": {
@@ -82,6 +96,17 @@
         "nsis"
       ]
     },
+    "fileAssociations": [
+      {
+        "ext": [
+          "aicanvas",
+          "aicproj"
+        ],
+        "name": "AI CanvasPro Project",
+        "description": "AI CanvasPro Project",
+        "icon": "build/app-icon.ico"
+      }
+    ],
     "nsis": {
       "artifactName": "AI-CanvasPro-Setup-${version}.${ext}",
       "oneClick": false,
@@ -93,6 +118,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "^6.8.3"
+    "electron-updater": "^6.8.3",
+    "yazl": "^3.3.1"
   }
 }

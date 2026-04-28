@@ -10,9 +10,21 @@
 
 [![作者：阿硕](https://img.shields.io/badge/作者-阿硕-pink?style=flat-square)](https://space.bilibili.com/1876480181)
 [![Bilibili](https://img.shields.io/badge/Bilibili-主页-00A1D6?style=flat-square\&logo=bilibili)](https://space.bilibili.com/1876480181)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-Source%20Available%20%7C%20NC-orange?style=flat-square)](LICENSE)
 
 </div>
+
+***
+
+## 授权与非官方部署声明
+
+本项目为 **Source Available / 公开源码项目**，并非 OSI 定义下的开源项目。源码仅供个人学习、研究、评估和非商业使用。
+
+未经作者单独书面授权，禁止将本项目或其衍生版本用于商业用途、SaaS、云服务、公开托管服务、收费服务、商业交付、外包交付、广告引流、会员订阅或其他直接/间接商业收益场景。
+
+除作者明确公布的地址外，任何第三方公开部署、镜像站点、托管服务或改版服务均为非官方行为，与作者无关；请勿在非官方站点输入 API Key、授权码或其他敏感信息。
+
+详细条款请查看 [LICENSE](./LICENSE) 和 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)。
 
 ***
 
@@ -151,5 +163,7 @@
 ## 许可证提示
 
 本项目采用双许可证模式：未获得书面商业授权时，仅允许个人学习、研究、评估和非商业使用；任何商业用途均需事先获得作者单独书面授权。
+
+本项目公开源码不代表放弃版权，也不代表允许未经授权的商业部署、公开托管、SaaS 化、镜像分发或改版运营。第三方自行部署、运营或传播本项目所产生的数据安全、接口费用、服务稳定性、用户纠纷等责任，由该第三方自行承担。
 
 详细条款请查看 [LICENSE](./LICENSE) 和 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)。

@@ -850,6 +850,21 @@ class DreaminaCliService:
                     return value
         return ""
 
+    def _extract_explicit_fail_reason(self, data):
+        if not isinstance(data, dict):
+            return ""
+        for key in ("fail_reason", "failReason"):
+            value = str(data.get(key) or "").strip()
+            if value:
+                return value
+        nested = data.get("data")
+        if isinstance(nested, dict):
+            for key in ("fail_reason", "failReason"):
+                value = str(nested.get(key) or "").strip()
+                if value:
+                    return value
+        return ""
+
     def _is_terminal_query_fail_reason(self, text):
         reason = str(text or "").strip().lower()
         if not reason:
@@ -872,6 +887,12 @@ class DreaminaCliService:
             "review failed",
         )
         return any(hint in reason for hint in hints)
+
+    def _is_explicit_terminal_fail_reason(self, text):
+        reason = str(text or "").strip()
+        if not reason:
+            return False
+        return not self._is_transient_query_error(reason)
 
     def _relative_output_path(self, abs_path):
         full = os.path.abspath(abs_path)
@@ -1019,9 +1040,11 @@ class DreaminaCliService:
             entry.get("gen_status") or entry.get("genStatus")
         )
         fail_reason = self._extract_fail_reason(entry)
+        explicit_fail_reason = self._extract_explicit_fail_reason(entry)
         raw = {"listTask": entry}
         if (
             (list_status == "failed" and fail_reason)
+            or self._is_explicit_terminal_fail_reason(explicit_fail_reason)
             or self._is_terminal_query_fail_reason(fail_reason)
         ):
             return {
@@ -1465,7 +1488,11 @@ class DreaminaCliService:
             self._cleanup_empty_parents(download_dir_abs, self._dreamina_download_tmp_root)
         status = self._to_status_phase(gen_status, outputs)
         fail_reason = self._extract_fail_reason(data)
-        if status != "failed" and self._is_terminal_query_fail_reason(fail_reason):
+        explicit_fail_reason = self._extract_explicit_fail_reason(data)
+        if status != "failed" and (
+            self._is_explicit_terminal_fail_reason(explicit_fail_reason)
+            or self._is_terminal_query_fail_reason(fail_reason)
+        ):
             status = "failed"
         fallback = None
         if not outputs and status in ("pending", "success"):

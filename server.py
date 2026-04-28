@@ -642,6 +642,7 @@ JSON_FILE_ROUTE_SERVICE = JsonFileRouteService(
     write_user_settings=_write_user_settings,
     atomic_write_json=lambda path, data: _atomic_write_json(path, data),
     output_dir_getter=lambda: OUTPUT_DIR,
+    uploads_dir_getter=lambda: UPLOADS_DIR,
 )
 LIBRARY_FILE_ROUTE_SERVICE = LibraryFileRouteService(
     user_dir_getter=lambda: USER_DIR,

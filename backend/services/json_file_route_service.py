@@ -16,6 +16,7 @@ class JsonFileRouteService:
         write_user_settings,
         atomic_write_json,
         output_dir_getter=None,
+        uploads_dir_getter=None,
     ):
         self._get_canvas_dir = canvas_dir_getter
         self._get_assets_dir = assets_dir_getter
@@ -25,6 +26,7 @@ class JsonFileRouteService:
         self._write_user_settings = write_user_settings
         self._atomic_write_json = atomic_write_json
         self._get_output_dir = output_dir_getter
+        self._get_uploads_dir = uploads_dir_getter
 
     @staticmethod
     def _json_ok(data):
@@ -169,28 +171,42 @@ class JsonFileRouteService:
         if isinstance(nodes, list) and nodes:
             node = nodes[0] if isinstance(nodes[0], dict) else None
         if isinstance(node, dict):
-            for key in ("localPath", "videoUrl", "audioUrl", "imageUrl"):
+            for key in ("localPath", "originalLocalPath", "videoUrl", "audioUrl", "imageUrl", "src"):
                 push(node.get(key))
-
-        push(asset.get("coverUrl") if isinstance(asset, dict) else "")
-        items = asset.get("items") if isinstance(asset, dict) else None
-        if isinstance(items, list) and items:
-            first_item = items[0] if isinstance(items[0], dict) else None
-            if isinstance(first_item, dict):
-                push(first_item.get("thumbSrc"))
         return paths
 
-    def _output_virtual_path_exists(self, virtual_path):
+    @staticmethod
+    def _looks_like_preview_derivative(local_path):
+        text = str(local_path or "").replace("\\", "/").lower()
+        return (
+            "/_derived/" in f"/{text}" or
+            ".thumb." in text or
+            ".display." in text
+        )
+
+    def _virtual_media_path_exists(self, virtual_path):
         local_path = self._normalize_virtual_path(virtual_path)
-        if not local_path.startswith("output/"):
+        if self._looks_like_preview_derivative(local_path):
             return True
-        if not self._get_output_dir:
+
+        root_dir = None
+        rel_path = ""
+        if local_path.startswith("output/"):
+            if not self._get_output_dir:
+                return True
+            root_dir = os.path.abspath(self._get_output_dir())
+            rel_path = local_path[len("output/") :].lstrip("/")
+        elif local_path.startswith("data/uploads/"):
+            if not self._get_uploads_dir:
+                return True
+            root_dir = os.path.abspath(self._get_uploads_dir())
+            rel_path = local_path[len("data/uploads/") :].lstrip("/")
+        else:
             return True
-        output_dir = os.path.abspath(self._get_output_dir())
-        rel_path = local_path[len("output/") :].lstrip("/")
-        abs_path = os.path.abspath(os.path.join(output_dir, *rel_path.split("/")))
+
+        abs_path = os.path.abspath(os.path.join(root_dir, *rel_path.split("/")))
         try:
-            if os.path.commonpath([abs_path, output_dir]) != output_dir:
+            if os.path.commonpath([abs_path, root_dir]) != root_dir:
                 return False
         except Exception:
             return False
@@ -201,10 +217,16 @@ class JsonFileRouteService:
             return False
         if str(asset.get("kind") or "").strip() != "generation-history":
             return True
+        saw_local_media_path = False
         for path in self._asset_primary_media_paths(asset):
             local_path = self._normalize_virtual_path(path)
-            if local_path.startswith("output/"):
-                return self._output_virtual_path_exists(local_path)
+            if local_path.startswith("output/") or local_path.startswith("data/uploads/"):
+                saw_local_media_path = True
+                if self._looks_like_preview_derivative(local_path):
+                    continue
+                return self._virtual_media_path_exists(local_path)
+        if saw_local_media_path:
+            return False
         return True
 
     def _list_assets(self, handler, path):

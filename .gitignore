@@ -18,6 +18,7 @@ demo123/
 node_modules/
 npm-debug.log*
 dist/
+dist-obfuscated/
 .electron-runtime/
 playwright-report/
 test-results/
@@ -52,6 +53,14 @@ dreamina-login-qr.png
 **/electron*
 *.electron*
 **/electron*/
+!electron/    
+!electron/main.js
+!electron/preload.cjs
+!electron/mediaTaskQueue.js
+!electron/diagnostics.js
+!electron/externalLinks.js
+!electron/updaterController.js
+!electron-builder.obfuscated.cjs
 
 # Ignore electron build outputs
 electron-build/
