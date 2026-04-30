@@ -6,6 +6,12 @@ import urllib.parse
 import urllib.request
 
 
+SUBSCRIPTION_NETWORK_HELP_MESSAGE = (
+    "授权服务不可用，请检查网络；如果当前网络无法连接授权服务器，"
+    "请打开科学上网/代理后重试，或查看飞书文档《关于网络》。"
+)
+
+
 class SubscriptionRemoteClient:
     def __init__(
         self,
@@ -156,7 +162,7 @@ class SubscriptionRemoteClient:
                 "installId": install,
                 "status": self.status_none,
                 "reasonCode": "SERVICE_UNAVAILABLE",
-                "reasonMessage": "授权服务不可用",
+                "reasonMessage": SUBSCRIPTION_NETWORK_HELP_MESSAGE,
                 "payload": None,
             }
         payload = self._extract_payload_dict(data)

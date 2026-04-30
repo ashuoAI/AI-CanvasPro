@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 
 user/
+user-data/
 output/
 data/
 release/
@@ -32,6 +33,9 @@ dev-helper.js
 /dev
 .codex/
 .vscode/
+发布.md
+.tmp/
+.tmp
 
 models/sam3_onnx/
 

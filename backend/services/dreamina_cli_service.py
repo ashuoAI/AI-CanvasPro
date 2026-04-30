@@ -32,6 +32,7 @@ class DreaminaCliService:
         self._dreamina_output_root = os.path.join(self._output_root_dir, "dreamina")
         self._dreamina_video_output_dir = self._output_root_dir
         self._dreamina_download_tmp_root = os.path.join(self._user_dir, "dreamina_downloads")
+        self._flatten_index_file = os.path.join(self._user_dir, ".dreamina_flatten_index.json")
         self._managed_dir = os.path.join(self._user_dir, "tools", "dreamina")
         self._managed_command_path = os.path.join(
             self._managed_dir,
@@ -823,28 +824,57 @@ class DreaminaCliService:
     def _extract_submit_id(self, data):
         if not isinstance(data, dict):
             return ""
-        for key in ("submit_id", "submitId"):
-            value = str(data.get(key) or "").strip()
-            if value:
-                return value
-        nested = data.get("data")
-        if isinstance(nested, dict):
+        for nested in self._iter_payload_dicts(data):
             for key in ("submit_id", "submitId"):
                 value = str(nested.get(key) or "").strip()
                 if value:
                     return value
         return ""
 
+    def _iter_payload_dicts(self, data):
+        if not isinstance(data, (dict, list)):
+            return
+        seen = set()
+        stack = [data]
+        while stack:
+            current = stack.pop(0)
+            if isinstance(current, dict):
+                current_id = id(current)
+                if current_id in seen:
+                    continue
+                seen.add(current_id)
+                yield current
+                for key in ("data", "result", "queryResult", "listTask", "task", "tasks"):
+                    nested = current.get(key)
+                    if isinstance(nested, (dict, list)):
+                        stack.append(nested)
+            elif isinstance(current, list):
+                for item in current:
+                    if isinstance(item, (dict, list)):
+                        stack.append(item)
+
+    def _extract_gen_status(self, data, fallback=""):
+        for nested in self._iter_payload_dicts(data):
+            for key in ("gen_status", "genStatus", "status"):
+                value = str(nested.get(key) or "").strip()
+                if value:
+                    return value
+        return fallback
+
     def _extract_fail_reason(self, data):
         if not isinstance(data, dict):
             return ""
-        for key in ("fail_reason", "failReason", "error", "message"):
-            value = str(data.get(key) or "").strip()
-            if value:
-                return value
-        nested = data.get("data")
-        if isinstance(nested, dict):
-            for key in ("fail_reason", "failReason", "error", "message"):
+        for nested in self._iter_payload_dicts(data):
+            for key in (
+                "fail_reason",
+                "failReason",
+                "failure_reason",
+                "failureReason",
+                "error",
+                "errorMessage",
+                "message",
+                "msg",
+            ):
                 value = str(nested.get(key) or "").strip()
                 if value:
                     return value
@@ -853,13 +883,8 @@ class DreaminaCliService:
     def _extract_explicit_fail_reason(self, data):
         if not isinstance(data, dict):
             return ""
-        for key in ("fail_reason", "failReason"):
-            value = str(data.get(key) or "").strip()
-            if value:
-                return value
-        nested = data.get("data")
-        if isinstance(nested, dict):
-            for key in ("fail_reason", "failReason"):
+        for nested in self._iter_payload_dicts(data):
+            for key in ("fail_reason", "failReason", "failure_reason", "failureReason"):
                 value = str(nested.get(key) or "").strip()
                 if value:
                     return value
@@ -926,7 +951,68 @@ class DreaminaCliService:
                 return candidate
             index += 1
 
-    def _flatten_local_output_path(self, local_path, task_type):
+    def _load_flatten_index(self):
+        try:
+            with open(self._flatten_index_file, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_flatten_index(self, data):
+        try:
+            os.makedirs(os.path.dirname(self._flatten_index_file), exist_ok=True)
+            temp_path = f"{self._flatten_index_file}.tmp"
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(data if isinstance(data, dict) else {}, f, ensure_ascii=False, indent=2)
+            os.replace(temp_path, self._flatten_index_file)
+        except Exception:
+            pass
+
+    def _flatten_dedupe_key(self, local_path, task_type, submit_id):
+        sid = str(submit_id or "").strip()
+        if not sid:
+            return ""
+        normalized_task = str(task_type or "").strip().lower() or "unknown"
+        source_name = os.path.basename(str(local_path or "").strip())
+        return f"{sid}:{normalized_task}:{source_name}"
+
+    def _lookup_flattened_output(self, dedupe_key, duplicate_abs_path=""):
+        key = str(dedupe_key or "").strip()
+        if not key:
+            return ""
+        with self._lock:
+            index = self._load_flatten_index()
+            rel = str(index.get(key) or "").strip()
+            if not rel:
+                return ""
+            abs_path = rel
+            if not os.path.isabs(abs_path):
+                abs_path = os.path.join(self._workspace_dir, rel)
+            abs_path = os.path.abspath(abs_path)
+            if os.path.isfile(abs_path):
+                duplicate = os.path.abspath(str(duplicate_abs_path or ""))
+                if duplicate and duplicate != abs_path and os.path.isfile(duplicate):
+                    try:
+                        os.remove(duplicate)
+                    except Exception:
+                        pass
+                return self._relative_output_path(abs_path)
+            index.pop(key, None)
+            self._save_flatten_index(index)
+        return ""
+
+    def _remember_flattened_output(self, dedupe_key, rel_path):
+        key = str(dedupe_key or "").strip()
+        rel = str(rel_path or "").strip()
+        if not key or not rel:
+            return
+        with self._lock:
+            index = self._load_flatten_index()
+            index[key] = rel
+            self._save_flatten_index(index)
+
+    def _flatten_local_output_path(self, local_path, task_type, submit_id=""):
         rel = str(local_path or "").strip()
         if not rel:
             return rel
@@ -939,9 +1025,15 @@ class DreaminaCliService:
 
         output_dir = os.path.abspath(self._dreamina_video_output_dir)
         os.makedirs(output_dir, exist_ok=True)
+        dedupe_key = self._flatten_dedupe_key(abs_path, task_type, submit_id)
+        cached = self._lookup_flattened_output(dedupe_key, abs_path)
+        if cached:
+            return cached
         current_dir = os.path.abspath(os.path.dirname(abs_path))
         if current_dir == output_dir:
-            return self._relative_output_path(abs_path)
+            rel_path = self._relative_output_path(abs_path)
+            self._remember_flattened_output(dedupe_key, rel_path)
+            return rel_path
 
         ext = os.path.splitext(abs_path)[1] or ""
         normalized_task = str(task_type or "").lower()
@@ -953,7 +1045,9 @@ class DreaminaCliService:
             base_name = "dreamina_file"
         target_path = self._next_flat_output_path(output_dir, base_name, ext)
         shutil.move(abs_path, target_path)
-        return self._relative_output_path(target_path)
+        rel_path = self._relative_output_path(target_path)
+        self._remember_flattened_output(dedupe_key, rel_path)
+        return rel_path
 
     def _cleanup_empty_parents(self, path, stop_dir):
         current = os.path.abspath(str(path or ""))
@@ -1022,10 +1116,17 @@ class DreaminaCliService:
                 return item
         return {}
 
-    def _resolve_video_query_fallback(self, submit_id, task_type, command_path=""):
+    def _resolve_video_query_fallback(
+        self,
+        submit_id,
+        task_type,
+        command_path="",
+        allow_non_video=False,
+    ):
         normalized_task_type = str(task_type or "").strip().lower()
         if (
-            normalized_task_type
+            not allow_non_video
+            and normalized_task_type
             and normalized_task_type != "unknown"
             and not self._is_video_task_type(task_type)
         ):
@@ -1170,9 +1271,10 @@ class DreaminaCliService:
             data = self._parse_json_from_output(result.get("output") or "")
             submit_id = self._extract_submit_id(data)
             gen_status = self._normalize_gen_status(
-                data.get("gen_status")
-                or data.get("genStatus")
-                or ("success" if result.get("ok") else "failed")
+                self._extract_gen_status(
+                    data,
+                    "success" if result.get("ok") else "failed",
+                )
             )
             fail_reason = self._extract_fail_reason(data) or str(result.get("output") or "").strip()
             if (not result.get("ok")) or gen_status in ("failed", "fail", "error"):
@@ -1471,10 +1573,9 @@ class DreaminaCliService:
             }
 
         submit_from_result = self._extract_submit_id(data) or sid
-        gen_status = (
-            data.get("gen_status")
-            or data.get("genStatus")
-            or ("success" if result.get("ok") else "failed")
+        gen_status = self._extract_gen_status(
+            data,
+            "success" if result.get("ok") else "failed",
         )
         outputs = self._extract_outputs(data, download_dir_abs if should_download else "")
         if should_download and outputs:
@@ -1484,7 +1585,7 @@ class DreaminaCliService:
                 local_path = item.get("localPath")
                 if not local_path:
                     continue
-                item["localPath"] = self._flatten_local_output_path(local_path, task_type)
+                item["localPath"] = self._flatten_local_output_path(local_path, task_type, sid)
             self._cleanup_empty_parents(download_dir_abs, self._dreamina_download_tmp_root)
         status = self._to_status_phase(gen_status, outputs)
         fail_reason = self._extract_fail_reason(data)
@@ -1500,6 +1601,7 @@ class DreaminaCliService:
                 sid,
                 task_type,
                 command_path=command_path,
+                allow_non_video=True,
             )
             if fallback and fallback.get("status") == "failed":
                 return self._build_query_fallback_response(

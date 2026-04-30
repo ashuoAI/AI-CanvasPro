@@ -3,6 +3,8 @@ import os
 import re
 from urllib.parse import parse_qs, unquote, urlparse
 
+from backend.services.media_file_route_service import MediaFileRouteService
+
 
 class JsonFileRouteService:
     def __init__(
@@ -15,6 +17,8 @@ class JsonFileRouteService:
         read_user_settings,
         write_user_settings,
         atomic_write_json,
+        start_file_save_migration=None,
+        get_file_save_migration_status=None,
         output_dir_getter=None,
         uploads_dir_getter=None,
     ):
@@ -24,6 +28,8 @@ class JsonFileRouteService:
         self._get_user_dir = user_dir_getter
         self._read_user_settings = read_user_settings
         self._write_user_settings = write_user_settings
+        self._start_file_save_migration = start_file_save_migration
+        self._get_file_save_migration_status = get_file_save_migration_status
         self._atomic_write_json = atomic_write_json
         self._get_output_dir = output_dir_getter
         self._get_uploads_dir = uploads_dir_getter
@@ -147,15 +153,7 @@ class JsonFileRouteService:
 
     @staticmethod
     def _normalize_virtual_path(value):
-        text = str(value or "").strip().replace("\\", "/")
-        if not text:
-            return ""
-        parsed = urlparse(text)
-        if parsed.scheme in ("http", "https", "blob", "data", "file", "javascript"):
-            return ""
-        if parsed.scheme and not text.startswith("/"):
-            return ""
-        return unquote(text).strip().lstrip("/")
+        return MediaFileRouteService.normalize_virtual_local_path(value)
 
     @classmethod
     def _asset_primary_media_paths(cls, asset):
@@ -201,6 +199,11 @@ class JsonFileRouteService:
                 return True
             root_dir = os.path.abspath(self._get_uploads_dir())
             rel_path = local_path[len("data/uploads/") :].lstrip("/")
+        elif local_path.startswith("data/assets/"):
+            if not self._get_assets_dir:
+                return True
+            root_dir = os.path.abspath(self._get_assets_dir())
+            rel_path = local_path[len("data/assets/") :].lstrip("/")
         else:
             return True
 
@@ -220,7 +223,7 @@ class JsonFileRouteService:
         saw_local_media_path = False
         for path in self._asset_primary_media_paths(asset):
             local_path = self._normalize_virtual_path(path)
-            if local_path.startswith("output/") or local_path.startswith("data/uploads/"):
+            if local_path.startswith("output/") or local_path.startswith("data/uploads/") or local_path.startswith("data/assets/"):
                 saw_local_media_path = True
                 if self._looks_like_preview_derivative(local_path):
                     continue
@@ -355,6 +358,36 @@ class JsonFileRouteService:
         self._write_json_file(os.path.join(self._get_user_dir(), filename), data)
         return self._json_ok({"success": True})
 
+    def _start_file_save_migration_job(self, body):
+        if not self._start_file_save_migration:
+            return self._json_err(404, "File save migration is unavailable")
+        data, error = self._parse_json_object(body)
+        if error is not None:
+            return error
+        try:
+            return self._json_ok(self._start_file_save_migration(data))
+        except ValueError as exc:
+            return self._json_err(400, str(exc))
+        except RuntimeError as exc:
+            return self._json_err(409, str(exc))
+        except Exception as exc:
+            return self._json_err(500, str(exc))
+
+    def _load_file_save_migration_status(self, handler):
+        if not self._get_file_save_migration_status:
+            return self._json_err(404, "File save migration is unavailable")
+        raw_path = getattr(handler, "path", "") if handler is not None else ""
+        query = parse_qs(urlparse(str(raw_path or "")).query, keep_blank_values=True)
+        job_id = self._first_query_value(query, "jobId")
+        try:
+            return self._json_ok(self._get_file_save_migration_status(job_id))
+        except ValueError as exc:
+            return self._json_err(400, str(exc))
+        except FileNotFoundError as exc:
+            return self._json_err(404, str(exc))
+        except Exception as exc:
+            return self._json_err(500, str(exc))
+
     def _delete_json_file(self, path, *, prefix, directory, not_found_message):
         filename = unquote(path[len(prefix) :])
         if not self._valid_json_path_fragment(filename):
@@ -397,6 +430,9 @@ class JsonFileRouteService:
                 self._list_json_objects(self._get_workflows_dir(), id_from_filename=True)
             )
 
+        if path == "/api/v2/user/file-save-paths/migration/status":
+            return self._load_file_save_migration_status(handler)
+
         if path.startswith("/api/v2/user/") and not path.startswith("/api/v2/user/presets"):
             return self._load_user_json(path)
 
@@ -411,6 +447,9 @@ class JsonFileRouteService:
 
         if path == "/api/v2/workflows/save":
             return self._save_workflow(body)
+
+        if path == "/api/v2/user/file-save-paths/migration/start":
+            return self._start_file_save_migration_job(body)
 
         if path.startswith("/api/v2/user/"):
             return self._save_user_json(path, body)

@@ -70,20 +70,51 @@ STATIC_VIDEO_CACHE_EXTS = {
     ".mpeg",
     ".mpg",
 }
+DERIVED_MEDIA_CACHE_CONTROL = "public, max-age=604800, immutable"
+STATIC_VIDEO_CACHE_CONTROL = "public, max-age=86400"
+NO_STORE_CACHE_CONTROL = "no-store, no-cache, must-revalidate, max-age=0"
+DERIVED_STATIC_MEDIA_PREFIXES = (
+    "/data/uploads/_derived/",
+    "/data/assets/_derived/",
+    "/data/assets/derived/",
+    "/output/_derived/",
+    "/output/VideoThumbs/",
+)
 
-def _is_cacheable_static_video_request(request_path):
+
+def _normalize_request_path(request_path):
     try:
         raw_path = urllib.parse.urlsplit(str(request_path or "")).path
-        decoded_path = urllib.parse.unquote(raw_path).replace("\\", "/")
+        return urllib.parse.unquote(raw_path).replace("\\", "/")
     except Exception:
+        return ""
+
+
+def _is_cacheable_derived_media_request(request_path):
+    decoded_path = _normalize_request_path(request_path)
+    return any(decoded_path.startswith(prefix) for prefix in DERIVED_STATIC_MEDIA_PREFIXES)
+
+
+def _is_cacheable_static_video_request(request_path):
+    decoded_path = _normalize_request_path(request_path)
+    if not decoded_path:
         return False
     if not (
         decoded_path.startswith("/output/")
         or decoded_path.startswith("/data/uploads/")
+        or decoded_path.startswith("/data/assets/")
     ):
         return False
     _, ext = os.path.splitext(decoded_path)
     return ext.lower() in STATIC_VIDEO_CACHE_EXTS
+
+
+def _resolve_static_cache_control(request_path):
+    if _is_cacheable_derived_media_request(request_path):
+        return DERIVED_MEDIA_CACHE_CONTROL
+    if _is_cacheable_static_video_request(request_path):
+        return STATIC_VIDEO_CACHE_CONTROL
+    return NO_STORE_CACHE_CONTROL
 
 def _get_int_env(name, default, min_value=None):
     try:
@@ -171,16 +202,20 @@ LOCAL_VERSION   = get_version_from_index_html()  # 从 index.html 读取版本�
 _gen_seq_lock   = threading.Lock()
 _smart_clip_jobs = {}
 _smart_clip_lock = threading.Lock()
+_file_save_migration_jobs = {}
+_file_save_migration_lock = threading.Lock()
 
 # --- 可配置的数据目录，默认位于 v2/ 下 ---
 DEFAULT_USER_DIR = _get_path_env("AIC_USER_DIR", os.path.join(DIRECTORY, "user"))
 DEFAULT_CANVAS_DIR = _get_path_env("AIC_CANVAS_DIR", os.path.join(DEFAULT_USER_DIR, "Canvas Project"))
 DEFAULT_OUTPUT_DIR = _get_path_env("AIC_OUTPUT_DIR", os.path.join(DIRECTORY, "output"))
-DEFAULT_UPLOADS_DIR = _get_path_env("AIC_UPLOADS_DIR", os.path.join(DIRECTORY, "data", "uploads"))
-DEFAULT_ASSETS_DIR = _get_path_env("AIC_ASSETS_DIR", os.path.join(DIRECTORY, "data", "assets"))
-DEFAULT_WORKFLOWS_DIR = _get_path_env("AIC_WORKFLOWS_DIR", os.path.join(DIRECTORY, "data", "workflows"))
+DEFAULT_DATA_DIR = _get_path_env("AIC_DATA_DIR", os.path.join(DIRECTORY, "data"))
+DEFAULT_UPLOADS_DIR = _get_path_env("AIC_UPLOADS_DIR", os.path.join(DEFAULT_DATA_DIR, "uploads"))
+DEFAULT_ASSETS_DIR = _get_path_env("AIC_ASSETS_DIR", os.path.join(DEFAULT_DATA_DIR, "assets"))
+DEFAULT_WORKFLOWS_DIR = _get_path_env("AIC_WORKFLOWS_DIR", os.path.join(DEFAULT_DATA_DIR, "workflows"))
 LEGACY_DEFAULT_CANVAS_DIR = _get_optional_path_env("AIC_LEGACY_CANVAS_DIR")
 LEGACY_DEFAULT_OUTPUT_DIR = _get_optional_path_env("AIC_LEGACY_OUTPUT_DIR")
+LEGACY_DEFAULT_DATA_DIR = _get_optional_path_env("AIC_LEGACY_DATA_DIR")
 LEGACY_DEFAULT_UPLOADS_DIR = _get_optional_path_env("AIC_LEGACY_UPLOADS_DIR")
 FFMPEG_EXE = _get_executable_env("AIC_FFMPEG_EXE", "ffmpeg")
 FFPROBE_EXE = _get_executable_env("AIC_FFPROBE_EXE", "ffprobe")
@@ -188,10 +223,11 @@ SYSTEM_FILE_SAVE_PATHS_ENABLED = bool(str(os.environ.get("AIC_USER_DIR", "") or 
 
 USER_DIR       = DEFAULT_USER_DIR
 CANVAS_DIR     = DEFAULT_CANVAS_DIR
+DATA_DIR       = DEFAULT_DATA_DIR
 ASSETS_DIR     = DEFAULT_ASSETS_DIR
 ASSET_THUMBS_DIR = os.path.join(ASSETS_DIR, "thumbs")
 WORKFLOWS_DIR  = DEFAULT_WORKFLOWS_DIR
-WORKFLOW_THUMBS_DIR = os.path.join(WORKFLOWS_DIR, "thumbs")
+WORKFLOW_THUMBS_DIR = os.path.join(ASSETS_DIR, "workflows", "thumbs")
 UPLOADS_DIR    = DEFAULT_UPLOADS_DIR
 OUTPUT_DIR     = DEFAULT_OUTPUT_DIR
 CONFIG_FILE    = os.path.join(USER_DIR, "config.json")
@@ -311,6 +347,7 @@ def _migrate_legacy_default_file_save_paths(paths):
     replacements = (
         ("canvasDir", LEGACY_DEFAULT_CANVAS_DIR, DEFAULT_CANVAS_DIR),
         ("outputDir", LEGACY_DEFAULT_OUTPUT_DIR, DEFAULT_OUTPUT_DIR),
+        ("dataDir", LEGACY_DEFAULT_DATA_DIR, DEFAULT_DATA_DIR),
         ("tempDir", LEGACY_DEFAULT_UPLOADS_DIR, DEFAULT_UPLOADS_DIR),
     )
     changed = False
@@ -344,9 +381,20 @@ def _should_ignore_system_file_save_paths(paths):
     values = (
         paths.get("canvasDir"),
         paths.get("outputDir"),
+        paths.get("dataDir"),
         paths.get("tempDir"),
     )
     return any(_is_path_policy_test_residue(value) for value in values)
+
+
+def _infer_data_dir_from_temp_dir(temp_dir):
+    raw = str(temp_dir or "").strip()
+    if not raw:
+        return ""
+    normalized = os.path.abspath(raw)
+    if os.path.basename(normalized).lower() == "uploads":
+        return os.path.dirname(normalized)
+    return normalized
 
 
 def _file_save_paths_from_settings(settings):
@@ -354,11 +402,24 @@ def _file_save_paths_from_settings(settings):
     if not isinstance(src, dict):
         src = {}
     src = _migrate_legacy_default_file_save_paths(src)
+    raw_data_dir = src.get("dataDir")
+    raw_temp_dir = src.get("tempDir")
+    has_data_dir = bool(str(raw_data_dir or "").strip())
+    data_dir = _normalize_storage_dir(
+        raw_data_dir or _infer_data_dir_from_temp_dir(raw_temp_dir),
+        DEFAULT_DATA_DIR,
+    )
+    temp_dir = (
+        os.path.join(data_dir, "uploads")
+        if has_data_dir
+        else _normalize_storage_dir(raw_temp_dir, os.path.join(data_dir, "uploads"))
+    )
     return {
         "userDir": _normalize_storage_dir(src.get("userDir"), DEFAULT_USER_DIR),
         "canvasDir": _normalize_storage_dir(src.get("canvasDir"), CANVAS_DIR),
         "outputDir": _normalize_storage_dir(src.get("outputDir"), DEFAULT_OUTPUT_DIR),
-        "tempDir": _normalize_storage_dir(src.get("tempDir"), DEFAULT_UPLOADS_DIR),
+        "dataDir": data_dir,
+        "tempDir": os.path.abspath(temp_dir),
     }
 
 
@@ -373,6 +434,7 @@ def _current_file_save_paths():
         "userDir": os.path.abspath(USER_DIR),
         "canvasDir": os.path.abspath(CANVAS_DIR),
         "outputDir": os.path.abspath(OUTPUT_DIR),
+        "dataDir": os.path.abspath(DATA_DIR),
         "tempDir": os.path.abspath(UPLOADS_DIR),
     }
 
@@ -398,7 +460,7 @@ def _validate_file_save_paths(paths):
         ("用户设置保存路径", normalized["userDir"]),
         ("画布项目保存路径", normalized["canvasDir"]),
         ("输出文件保存路径", normalized["outputDir"]),
-        ("临时文件保存路径", normalized["tempDir"]),
+        ("数据文件保存路径", normalized["dataDir"]),
     ):
         if not os.path.isabs(p):
             raise ValueError(f"{label}必须是绝对路径")
@@ -407,8 +469,9 @@ def _validate_file_save_paths(paths):
 
     pairs = (
         ("用户设置保存路径", normalized["userDir"], "输出文件保存路径", normalized["outputDir"]),
-        ("用户设置保存路径", normalized["userDir"], "临时文件保存路径", normalized["tempDir"]),
-        ("输出文件保存路径", normalized["outputDir"], "临时文件保存路径", normalized["tempDir"]),
+        ("用户设置保存路径", normalized["userDir"], "数据文件保存路径", normalized["dataDir"]),
+        ("画布项目保存路径", normalized["canvasDir"], "数据文件保存路径", normalized["dataDir"]),
+        ("输出文件保存路径", normalized["outputDir"], "数据文件保存路径", normalized["dataDir"]),
     )
     for left_label, left, right_label, right in pairs:
         if _is_same_or_nested_path(left, right):
@@ -416,7 +479,21 @@ def _validate_file_save_paths(paths):
     return normalized
 
 
-def _copy_missing_tree(src, dst):
+def _remove_empty_dirs(root_dir):
+    root_dir = os.path.abspath(root_dir)
+    if not os.path.isdir(root_dir):
+        return
+    for current_root, _, files in os.walk(root_dir, topdown=False):
+        if files:
+            continue
+        try:
+            if not os.listdir(current_root):
+                os.rmdir(current_root)
+        except Exception:
+            pass
+
+
+def _move_missing_tree(src, dst):
     src = os.path.abspath(src)
     dst = os.path.abspath(dst)
     if not os.path.isdir(src):
@@ -434,17 +511,311 @@ def _copy_missing_tree(src, dst):
             if os.path.exists(dst_file):
                 continue
             try:
-                shutil.copy2(src_file, dst_file)
+                shutil.move(src_file, dst_file)
             except Exception:
                 pass
+    _remove_empty_dirs(src)
+
+
+def _new_file_save_migration_job_id():
+    ts = int(time.time() * 1000)
+    return f"file-save-migration-{ts}-{random.randint(1000, 9999)}"
+
+
+def _snapshot_file_save_migration_job(job_id):
+    with _file_save_migration_lock:
+        job = _file_save_migration_jobs.get(job_id)
+        return dict(job) if isinstance(job, dict) else None
+
+
+def _update_file_save_migration_job(job_id, **kwargs):
+    with _file_save_migration_lock:
+        job = _file_save_migration_jobs.get(job_id)
+        if not job:
+            return
+        job.update(kwargs)
+        job["updatedAt"] = time.time()
+
+
+def _file_save_migration_public_job(job):
+    if not isinstance(job, dict):
+        return None
+    public = dict(job)
+    errors = public.get("errors")
+    if isinstance(errors, list):
+        public["errors"] = errors[:20]
+    return public
+
+
+def _count_file_save_migration_files(src):
+    src = os.path.abspath(src)
+    if not os.path.isdir(src):
+        return 0
+    total = 0
+    for _, _, files in os.walk(src):
+        total += len(files)
+    return total
+
+
+def _build_file_save_migration_steps(previous, normalized):
+    return [
+        {
+            "key": "canvasDir",
+            "label": "画布项目保存路径",
+            "src": os.path.abspath(previous["canvasDir"]),
+            "dst": os.path.abspath(normalized["canvasDir"]),
+        },
+        {
+            "key": "outputDir",
+            "label": "输出文件保存路径",
+            "src": os.path.abspath(previous["outputDir"]),
+            "dst": os.path.abspath(normalized["outputDir"]),
+        },
+        {
+            "key": "tempDir",
+            "label": "上传文件保存路径",
+            "src": os.path.abspath(previous["tempDir"]),
+            "dst": os.path.abspath(normalized["tempDir"]),
+        },
+        {
+            "key": "assetsDir",
+            "label": "资产库保存路径",
+            "src": os.path.abspath(os.path.join(previous["dataDir"], "assets")),
+            "dst": os.path.abspath(os.path.join(normalized["dataDir"], "assets")),
+        },
+        {
+            "key": "workflowsDir",
+            "label": "工作流保存路径",
+            "src": os.path.abspath(os.path.join(previous["dataDir"], "workflows")),
+            "dst": os.path.abspath(os.path.join(normalized["dataDir"], "workflows")),
+        },
+    ]
+
+
+def _move_missing_tree_with_file_save_progress(job_id, step):
+    src = os.path.abspath(step["src"])
+    dst = os.path.abspath(step["dst"])
+    label = str(step.get("label") or "")
+    if _same_storage_path(src, dst) or not os.path.isdir(src):
+        return
+
+    os.makedirs(dst, exist_ok=True)
+    for root, dirs, files in os.walk(src):
+        rel_root = os.path.relpath(root, src)
+        target_root = dst if rel_root == "." else os.path.join(dst, rel_root)
+        os.makedirs(target_root, exist_ok=True)
+        for dirname in dirs:
+            os.makedirs(os.path.join(target_root, dirname), exist_ok=True)
+        for filename in files:
+            src_file = os.path.join(root, filename)
+            dst_file = os.path.join(target_root, filename)
+            rel_file = filename if rel_root == "." else os.path.join(rel_root, filename)
+            current_file = rel_file.replace("\\", "/")
+            with _file_save_migration_lock:
+                job = _file_save_migration_jobs.get(job_id)
+                if not job:
+                    return
+                job["stage"] = f"正在迁移{label}"
+                job["currentBucket"] = step.get("key") or ""
+                job["currentFile"] = current_file
+                job["updatedAt"] = time.time()
+
+            if os.path.exists(dst_file):
+                with _file_save_migration_lock:
+                    job = _file_save_migration_jobs.get(job_id)
+                    if not job:
+                        return
+                    job["skippedCount"] = int(job.get("skippedCount") or 0) + 1
+                    job["processedFiles"] = int(job.get("processedFiles") or 0) + 1
+                    total_files = max(1, int(job.get("totalFiles") or 0))
+                    job["progress"] = min(94, 6 + int((job["processedFiles"] / total_files) * 88))
+                    job["updatedAt"] = time.time()
+                continue
+
+            try:
+                shutil.move(src_file, dst_file)
+                with _file_save_migration_lock:
+                    job = _file_save_migration_jobs.get(job_id)
+                    if not job:
+                        return
+                    job["copiedCount"] = int(job.get("copiedCount") or 0) + 1
+                    job["copiedBytes"] = int(job.get("copiedBytes") or 0) + int(os.path.getsize(dst_file) or 0)
+            except Exception as exc:
+                with _file_save_migration_lock:
+                    job = _file_save_migration_jobs.get(job_id)
+                    if not job:
+                        return
+                    job["failedCount"] = int(job.get("failedCount") or 0) + 1
+                    errors = job.get("errors")
+                    if not isinstance(errors, list):
+                        errors = []
+                        job["errors"] = errors
+                    if len(errors) < 20:
+                        errors.append(
+                            {
+                                "bucket": step.get("key") or "",
+                                "path": current_file,
+                                "error": str(exc),
+                            }
+                        )
+            finally:
+                with _file_save_migration_lock:
+                    job = _file_save_migration_jobs.get(job_id)
+                    if not job:
+                        return
+                    job["processedFiles"] = int(job.get("processedFiles") or 0) + 1
+                    total_files = max(1, int(job.get("totalFiles") or 0))
+                    job["progress"] = min(94, 6 + int((job["processedFiles"] / total_files) * 88))
+                    job["updatedAt"] = time.time()
+    _remove_empty_dirs(src)
+
+
+def _run_file_save_migration_job(job_id, settings_payload, normalized, previous):
+    try:
+        steps = _build_file_save_migration_steps(previous, normalized)
+        _update_file_save_migration_job(
+            job_id,
+            status="planning",
+            stage="正在检查旧目录",
+            progress=2,
+        )
+        for p in normalized.values():
+            os.makedirs(p, exist_ok=True)
+
+        total_files = 0
+        step_summaries = []
+        for step in steps:
+            count = 0
+            if not _same_storage_path(step["src"], step["dst"]):
+                count = _count_file_save_migration_files(step["src"])
+            total_files += count
+            step_summaries.append(
+                {
+                    "key": step["key"],
+                    "label": step["label"],
+                    "source": step["src"],
+                    "target": step["dst"],
+                    "fileCount": count,
+                }
+            )
+
+        _update_file_save_migration_job(
+            job_id,
+            status="moving",
+            stage="正在迁移文件",
+            progress=6 if total_files else 88,
+            totalFiles=total_files,
+            steps=step_summaries,
+        )
+
+        for step in steps:
+            _move_missing_tree_with_file_save_progress(job_id, step)
+
+        _update_file_save_migration_job(
+            job_id,
+            status="applying",
+            stage="正在应用新的保存位置",
+            progress=96,
+            currentFile="",
+            currentBucket="",
+        )
+        payload = dict(settings_payload) if isinstance(settings_payload, dict) else {}
+        payload["fileSavePaths"] = normalized
+        _write_user_settings(payload, migrate=False)
+        applied_paths = _current_file_save_paths()
+        _update_file_save_migration_job(
+            job_id,
+            status="done",
+            stage="迁移完成",
+            progress=100,
+            settings=_read_user_settings(),
+            targetPaths=applied_paths,
+            completedAt=time.time(),
+        )
+    except Exception as exc:
+        _update_file_save_migration_job(
+            job_id,
+            status="error",
+            stage="迁移失败",
+            error=str(exc),
+            progress=100,
+            completedAt=time.time(),
+        )
+
+
+def _start_file_save_migration(data):
+    payload = dict(data) if isinstance(data, dict) else {}
+    settings_payload = payload.get("settings")
+    if not isinstance(settings_payload, dict):
+        settings_payload = dict(payload)
+    path_payload = payload.get("fileSavePaths")
+    if not isinstance(path_payload, dict):
+        path_payload = settings_payload.get("fileSavePaths")
+    if not isinstance(path_payload, dict):
+        raise ValueError("Missing fileSavePaths")
+
+    normalized = _validate_file_save_paths(path_payload)
+    previous = _current_file_save_paths()
+
+    job_id = _new_file_save_migration_job_id()
+    job = {
+        "success": True,
+        "jobId": job_id,
+        "status": "pending",
+        "stage": "准备迁移文件",
+        "progress": 0,
+        "previousPaths": previous,
+        "targetPaths": normalized,
+        "totalFiles": 0,
+        "processedFiles": 0,
+        "copiedCount": 0,
+        "skippedCount": 0,
+        "failedCount": 0,
+        "copiedBytes": 0,
+        "currentBucket": "",
+        "currentFile": "",
+        "errors": [],
+        "startedAt": time.time(),
+        "updatedAt": time.time(),
+    }
+    with _file_save_migration_lock:
+        for active_job in _file_save_migration_jobs.values():
+            if str(active_job.get("status") or "") in ("pending", "planning", "moving", "copying", "applying"):
+                raise RuntimeError("文件迁移正在进行中，请等待当前迁移完成")
+        _file_save_migration_jobs[job_id] = job
+
+    thread = threading.Thread(
+        target=_run_file_save_migration_job,
+        args=(job_id, settings_payload, normalized, previous),
+        daemon=True,
+        name=f"FileSaveMigration-{job_id}",
+    )
+    thread.start()
+    return _file_save_migration_public_job(job)
+
+
+def _get_file_save_migration_status(job_id):
+    job_id = str(job_id or "").strip()
+    if not job_id:
+        raise ValueError("Missing jobId")
+    job = _snapshot_file_save_migration_job(job_id)
+    if not job:
+        raise FileNotFoundError("Migration job not found")
+    return _file_save_migration_public_job(job)
 
 
 def _refresh_storage_globals(paths):
-    global USER_DIR, CANVAS_DIR, UPLOADS_DIR, OUTPUT_DIR, CONFIG_FILE, SETTINGS_FILE
+    global USER_DIR, CANVAS_DIR, DATA_DIR, UPLOADS_DIR, ASSETS_DIR, ASSET_THUMBS_DIR
+    global WORKFLOWS_DIR, WORKFLOW_THUMBS_DIR, OUTPUT_DIR, CONFIG_FILE, SETTINGS_FILE
     global GEN_SEQ_STATE_FILE, DREAMINA_CLI_SERVICE, DREAMINA_ROUTE_SERVICE
     USER_DIR = os.path.abspath(paths["userDir"])
     CANVAS_DIR = os.path.abspath(paths.get("canvasDir") or DEFAULT_CANVAS_DIR)
-    UPLOADS_DIR = os.path.abspath(paths["tempDir"])
+    DATA_DIR = os.path.abspath(paths["dataDir"])
+    UPLOADS_DIR = os.path.abspath(paths.get("tempDir") or os.path.join(DATA_DIR, "uploads"))
+    ASSETS_DIR = os.path.join(DATA_DIR, "assets")
+    ASSET_THUMBS_DIR = os.path.join(ASSETS_DIR, "thumbs")
+    WORKFLOWS_DIR = os.path.join(DATA_DIR, "workflows")
+    WORKFLOW_THUMBS_DIR = os.path.join(ASSETS_DIR, "workflows", "thumbs")
     OUTPUT_DIR = os.path.abspath(paths["outputDir"])
     CONFIG_FILE = os.path.join(USER_DIR, "config.json")
     SETTINGS_FILE = os.path.join(USER_DIR, "settings.json")
@@ -463,7 +834,12 @@ def _refresh_storage_globals(paths):
 def _ensure_storage_dirs():
     os.makedirs(USER_DIR, exist_ok=True)
     os.makedirs(CANVAS_DIR, exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOADS_DIR, exist_ok=True)
+    os.makedirs(ASSETS_DIR, exist_ok=True)
+    os.makedirs(ASSET_THUMBS_DIR, exist_ok=True)
+    os.makedirs(WORKFLOWS_DIR, exist_ok=True)
+    os.makedirs(WORKFLOW_THUMBS_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
@@ -473,10 +849,8 @@ def _apply_file_save_paths(paths, migrate=False):
     for p in normalized.values():
         os.makedirs(p, exist_ok=True)
     if migrate:
-        _copy_missing_tree(previous["userDir"], normalized["userDir"])
-        _copy_missing_tree(previous["canvasDir"], normalized["canvasDir"])
-        _copy_missing_tree(previous["outputDir"], normalized["outputDir"])
-        _copy_missing_tree(previous["tempDir"], normalized["tempDir"])
+        for step in _build_file_save_migration_steps(previous, normalized):
+            _move_missing_tree(step["src"], step["dst"])
     _refresh_storage_globals(normalized)
     _ensure_storage_dirs()
     return _current_file_save_paths()
@@ -552,7 +926,7 @@ except Exception:
         {
             "userDir": DEFAULT_USER_DIR,
             "outputDir": DEFAULT_OUTPUT_DIR,
-            "tempDir": DEFAULT_UPLOADS_DIR,
+            "dataDir": DEFAULT_DATA_DIR,
         },
         migrate=False,
     )
@@ -601,10 +975,10 @@ def _read_user_settings():
     return merged
 
 
-def _write_user_settings(data):
+def _write_user_settings(data, migrate=True):
     payload = dict(data) if isinstance(data, dict) else {}
     if isinstance(payload.get("fileSavePaths"), dict):
-        applied_paths = _apply_file_save_paths(payload["fileSavePaths"], migrate=True)
+        applied_paths = _apply_file_save_paths(payload["fileSavePaths"], migrate=bool(migrate))
         payload["fileSavePaths"] = applied_paths
         _persist_system_file_save_paths(applied_paths)
     elif "fileSavePaths" not in payload:
@@ -640,6 +1014,8 @@ JSON_FILE_ROUTE_SERVICE = JsonFileRouteService(
     user_dir_getter=lambda: USER_DIR,
     read_user_settings=_read_user_settings,
     write_user_settings=_write_user_settings,
+    start_file_save_migration=_start_file_save_migration,
+    get_file_save_migration_status=_get_file_save_migration_status,
     atomic_write_json=lambda path, data: _atomic_write_json(path, data),
     output_dir_getter=lambda: OUTPUT_DIR,
     uploads_dir_getter=lambda: UPLOADS_DIR,
@@ -648,6 +1024,7 @@ LIBRARY_FILE_ROUTE_SERVICE = LibraryFileRouteService(
     user_dir_getter=lambda: USER_DIR,
     asset_thumbs_dir_getter=lambda: ASSET_THUMBS_DIR,
     workflow_thumbs_dir_getter=lambda: WORKFLOW_THUMBS_DIR,
+    subscription_gate_service_getter=lambda: SUBSCRIPTION_GATE_SERVICE,
 )
 
 def _get_custom_ai_config():
@@ -881,6 +1258,7 @@ MEDIA_FILE_ROUTE_SERVICE = MediaFileRouteService(
     directory=DIRECTORY,
     uploads_dir_getter=lambda: UPLOADS_DIR,
     user_dir_getter=lambda: USER_DIR,
+    assets_dir_getter=lambda: ASSETS_DIR,
     output_dir_getter=lambda: OUTPUT_DIR,
     max_upload_bytes=MAX_UPLOAD_BYTES,
     next_output_filename=lambda ext: _next_gen_output_filename(ext),
@@ -1546,11 +1924,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         raw_path = urllib.parse.urlsplit(path).path
         decoded_path = urllib.parse.unquote(raw_path).replace("\\", "/")
         virtual_roots = (
-            ("/output/", OUTPUT_DIR),
-            ("/data/uploads/", UPLOADS_DIR),
-            ("/data/assets/", ASSETS_DIR),
             ("/data/workflows/", WORKFLOWS_DIR),
         )
+        media_path = _resolve_local_virtual_path(decoded_path)
+        if media_path:
+            return media_path
         for prefix, root_dir in virtual_roots:
             if decoded_path == prefix[:-1] or decoded_path.startswith(prefix):
                 rel = decoded_path[len(prefix):].lstrip("/")
@@ -1721,10 +2099,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not has_server_id:
             self.send_header("X-AICanvas-Server", "AI CanvasPro")
         if not has_cache_control:
-            if _is_cacheable_static_video_request(getattr(self, "path", "")):
-                self.send_header("Cache-Control", "public, max-age=86400")
-            else:
-                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header(
+                "Cache-Control",
+                _resolve_static_cache_control(getattr(self, "path", "")),
+            )
         if not has_cors:
             _send_cors_origin_header(self)
         super().end_headers()
@@ -1738,6 +2116,131 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         if HTTP_ROUTE_DISPATCHER.handle_post(self, path):
+            return
+
+        if path == "/api/v2/proxy/apimart-upload":
+            try:
+                content_type_header = self.headers.get("Content-Type", "") or ""
+                body = _read_body(self)
+                filename = "upload.bin"
+                file_content_type = "application/octet-stream"
+                file_extension = ""
+                permanent = False
+                file_bytes = b""
+
+                if content_type_header.startswith("multipart/form-data"):
+                    match = re.search(r"boundary=([^;]+)", content_type_header)
+                    boundary = (match.group(1).strip().strip('"') if match else "")
+                    if not boundary:
+                        _json_err(self, 400, "Missing multipart boundary"); return
+                    boundary_bytes = ("--" + boundary).encode("utf-8", "ignore")
+                    for part in body.split(boundary_bytes):
+                        if b"Content-Disposition:" not in part:
+                            continue
+                        header_end = part.find(b"\r\n\r\n")
+                        if header_end == -1:
+                            continue
+                        header_blob = part[:header_end].decode("utf-8", "ignore")
+                        data_blob = part[header_end + 4 :]
+                        if data_blob.endswith(b"\r\n"):
+                            data_blob = data_blob[:-2]
+                        if data_blob.endswith(b"--"):
+                            data_blob = data_blob[:-2]
+                        name_match = re.search(r'name="([^"]+)"', header_blob)
+                        field_name = name_match.group(1) if name_match else ""
+                        if field_name == "file":
+                            file_bytes = data_blob
+                            filename_match = re.search(r'filename="([^"]*)"', header_blob)
+                            if filename_match and filename_match.group(1).strip():
+                                filename = os.path.basename(filename_match.group(1).strip())
+                            type_match = re.search(r"Content-Type:\s*([^\r\n;]+)", header_blob, flags=re.IGNORECASE)
+                            if type_match and type_match.group(1).strip():
+                                file_content_type = type_match.group(1).strip()
+                        elif field_name in ("contentType", "fileExtension", "permanent"):
+                            value = data_blob.decode("utf-8", "ignore").strip()
+                            if field_name == "contentType" and value:
+                                file_content_type = value
+                            elif field_name == "fileExtension" and value:
+                                file_extension = value.lstrip(".")
+                            elif field_name == "permanent":
+                                permanent = value.lower() in ("1", "true", "yes", "on")
+                else:
+                    file_bytes = body
+                    file_content_type = content_type_header.split(";", 1)[0].strip() or file_content_type
+
+                if not file_bytes:
+                    _json_err(self, 400, "Missing upload file"); return
+                if not file_extension:
+                    file_extension = (os.path.splitext(filename)[1] or "").lstrip(".")
+                if not file_extension:
+                    file_extension = (mimetypes.guess_extension(file_content_type) or ".bin").lstrip(".")
+
+                presign_payload = {
+                    "contentType": file_content_type,
+                    "fileExtension": file_extension,
+                    "permanent": bool(permanent),
+                }
+                try:
+                    import requests as _req
+                    presign_resp = _req.post(
+                        "https://apimart.ai/api/upload/presign",
+                        json=presign_payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "User-Agent": "Mozilla/5.0",
+                        },
+                        timeout=60,
+                    )
+                    presign_resp.raise_for_status()
+                    presign_data = presign_resp.json()
+                    presigned_url = str(presign_data.get("presignedUrl") or "")
+                    cdn_url = str(presign_data.get("cdnUrl") or "")
+                    if not presigned_url or not cdn_url:
+                        raise RuntimeError("invalid presign response")
+                    upload_resp = _req.put(
+                        presigned_url,
+                        data=file_bytes,
+                        headers={"Content-Type": file_content_type},
+                        timeout=300,
+                    )
+                    upload_resp.raise_for_status()
+                except ImportError:
+                    req_body = json.dumps(presign_payload).encode("utf-8")
+                    req = urllib.request.Request(
+                        "https://apimart.ai/api/upload/presign",
+                        data=req_body,
+                        headers={
+                            "Content-Type": "application/json",
+                            "User-Agent": "Mozilla/5.0",
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=60) as resp:
+                        presign_data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                    presigned_url = str(presign_data.get("presignedUrl") or "")
+                    cdn_url = str(presign_data.get("cdnUrl") or "")
+                    if not presigned_url or not cdn_url:
+                        raise RuntimeError("invalid presign response")
+                    put_req = urllib.request.Request(
+                        presigned_url,
+                        data=file_bytes,
+                        headers={"Content-Type": file_content_type},
+                        method="PUT",
+                    )
+                    with urllib.request.urlopen(put_req, timeout=300):
+                        pass
+
+                _json_ok(
+                    self,
+                    {
+                        "url": cdn_url,
+                        "cdnUrl": cdn_url,
+                        "content_type": file_content_type,
+                        "bytes": len(file_bytes),
+                    },
+                )
+            except Exception as e:
+                _json_err(self, 500, f"APIMART upload proxy error: {repr(e)}")
             return
 
         # ┢┢ 文件上传 ┢┢
@@ -1820,22 +2323,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 instance_type = "default"
 
             def _resolve_local_file(url_or_path: str):
-                s = (url_or_path or "").strip()
-                if not s:
-                    return None
-                s2 = s.lstrip("/")
-                if s2.startswith("output/"):
-                    rel = s2[len("output/"):].lstrip("/\\")
-                    fp = os.path.abspath(os.path.join(OUTPUT_DIR, rel))
-                    if _is_path_inside(fp, OUTPUT_DIR) and os.path.isfile(fp):
-                        return fp
-                if s2.startswith("data/uploads/"):
-                    rel = s2[len("data/uploads/"):].lstrip("/\\")
-                    fp = os.path.abspath(os.path.join(UPLOADS_DIR, rel))
-                    if _is_path_inside(fp, UPLOADS_DIR) and os.path.isfile(fp):
-                        return fp
-                if os.path.isabs(s) and os.path.isfile(s):
-                    return s
+                fp = _resolve_local_virtual_path(url_or_path)
+                if fp and os.path.isfile(fp):
+                    return fp
                 return None
 
             def _guess_filename(raw: str, fallback_name: str):

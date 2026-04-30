@@ -13,10 +13,12 @@ class LibraryFileRouteService:
         user_dir_getter,
         asset_thumbs_dir_getter,
         workflow_thumbs_dir_getter,
+        subscription_gate_service_getter=None,
     ):
         self._get_user_dir = user_dir_getter
         self._get_asset_thumbs_dir = asset_thumbs_dir_getter
         self._get_workflow_thumbs_dir = workflow_thumbs_dir_getter
+        self._get_subscription_gate_service = subscription_gate_service_getter
 
     @staticmethod
     def _json_ok(data):
@@ -43,6 +45,65 @@ class LibraryFileRouteService:
     @staticmethod
     def _safe_name(value):
         return re.sub(r'[\\/:*?"<>|]', "_", str(value))
+
+    @staticmethod
+    def _normalize_preset_template(value):
+        text = str(value or "")
+        text = re.sub(
+            r'<span\b[^>]*\bdata-preset-placeholder=["\']user-input["\'][^>]*>[\s\S]*?</span>',
+            "{用户输入}",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(r"<br\b[^>]*\/?>", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"</(div|p)>", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", "", text)
+        return text.strip()
+
+    @staticmethod
+    def _normalize_preset_desc(value):
+        text = str(value or "")
+        text = re.sub(r"<[^>]+>", "", text)
+        return text.strip()
+
+    def _normalize_preset_type(self, value):
+        preset_type = str(value or "").strip()
+        if preset_type not in self._DEFAULT_PRESET_TYPES:
+            return ""
+        return preset_type
+
+    def _preset_dir(self, preset_type):
+        return os.path.join(self._get_user_dir(), "prompt", preset_type)
+
+    def _preset_path(self, preset_type, title):
+        safe_title = self._safe_name(str(title or "").strip()).strip()
+        if not safe_title:
+            return ""
+        return os.path.join(self._preset_dir(preset_type), f"{safe_title}.txt")
+
+    def _preset_meta_path(self, preset_type, title):
+        safe_title = self._safe_name(str(title or "").strip()).strip()
+        if not safe_title:
+            return ""
+        return os.path.join(self._preset_dir(preset_type), f"{safe_title}.json")
+
+    def _is_subscription_active(self, handler, payload):
+        if not callable(self._get_subscription_gate_service):
+            return False
+        try:
+            gate_service = self._get_subscription_gate_service()
+            decision = gate_service.check_vip_subscription_gate(
+                handler,
+                payload,
+                required_model_id="",
+            )
+        except Exception:
+            return False
+        if not isinstance(decision, dict):
+            return False
+        return bool(decision.get("allowed")) and str(
+            decision.get("status") or ""
+        ).strip().lower() == "active"
 
     @staticmethod
     def _extension_from_data_url_header(header):
@@ -77,15 +138,114 @@ class LibraryFileRouteService:
                         with open(path, "r", encoding="utf-8") as file:
                             content = file.read().strip()
                         if content:
-                            result[node_type].append(
-                                {
-                                    "title": filename[:-4],
-                                    "template": content,
-                                }
-                            )
+                            item = {
+                                "title": filename[:-4],
+                                "template": content,
+                            }
+                            meta_path = self._preset_meta_path(node_type, filename[:-4])
+                            if meta_path and os.path.exists(meta_path):
+                                try:
+                                    with open(meta_path, "r", encoding="utf-8") as meta_file:
+                                        meta = json.load(meta_file)
+                                    desc = self._normalize_preset_desc(
+                                        meta.get("desc") if isinstance(meta, dict) else ""
+                                    )
+                                    if desc:
+                                        item["desc"] = desc
+                                except Exception as exc:
+                                    print(f"Error reading preset metadata {meta_path}: {exc}")
+                            result[node_type].append(item)
                     except Exception as exc:
                         print(f"Error reading preset {path}: {exc}")
         return result
+
+    def _save_preset(self, handler, data):
+        preset_type = self._normalize_preset_type(data.get("nodeType"))
+        title = str(data.get("title") or "").strip()
+        original_title = str(data.get("originalTitle") or "").strip()
+        template = self._normalize_preset_template(data.get("template"))
+        desc = self._normalize_preset_desc(
+            data.get("desc") if "desc" in data else data.get("description")
+        )
+        if not preset_type:
+            return self._json_err(400, "Invalid nodeType")
+        if not title:
+            return self._json_err(400, "Preset title required")
+        if not template:
+            return self._json_err(400, "Preset template required")
+
+        target_dir = self._preset_dir(preset_type)
+        os.makedirs(target_dir, exist_ok=True)
+        target_path = self._preset_path(preset_type, title)
+        if not target_path:
+            return self._json_err(400, "Invalid preset title")
+
+        original_path = (
+            self._preset_path(preset_type, original_title)
+            if original_title
+            else target_path
+        )
+        original_exists = bool(original_path and os.path.exists(original_path))
+        target_exists = os.path.exists(target_path)
+        if original_path != target_path and target_exists:
+            return self._json_err(409, "Preset title already exists")
+
+        current_count = len(self._read_presets().get(preset_type, []))
+        creating_new = not original_exists and not target_exists
+        if (
+            creating_new
+            and current_count >= 3
+            and not self._is_subscription_active(handler, data)
+        ):
+            return self._json_err(403, "未授权用户每类节点最多 3 个自定义预设")
+
+        with open(target_path, "w", encoding="utf-8") as file:
+            file.write(template)
+        target_meta_path = self._preset_meta_path(preset_type, title)
+        if desc and target_meta_path:
+            with open(target_meta_path, "w", encoding="utf-8") as file:
+                json.dump({"desc": desc}, file, ensure_ascii=False)
+        elif target_meta_path and os.path.exists(target_meta_path):
+            os.remove(target_meta_path)
+        if original_path != target_path and original_exists:
+            try:
+                os.remove(original_path)
+            except FileNotFoundError:
+                pass
+            original_meta_path = self._preset_meta_path(preset_type, original_title)
+            if original_meta_path and os.path.exists(original_meta_path):
+                try:
+                    os.remove(original_meta_path)
+                except FileNotFoundError:
+                    pass
+        return self._json_ok(
+            {
+                "success": True,
+                "nodeType": preset_type,
+                "title": title,
+            }
+        )
+
+    def _delete_preset(self, data):
+        preset_type = self._normalize_preset_type(data.get("nodeType"))
+        title = str(data.get("title") or "").strip()
+        if not preset_type:
+            return self._json_err(400, "Invalid nodeType")
+        if not title:
+            return self._json_err(400, "Preset title required")
+        path = self._preset_path(preset_type, title)
+        if path and os.path.exists(path):
+            os.remove(path)
+        meta_path = self._preset_meta_path(preset_type, title)
+        if meta_path and os.path.exists(meta_path):
+            os.remove(meta_path)
+        return self._json_ok(
+            {
+                "success": True,
+                "nodeType": preset_type,
+                "title": title,
+            }
+        )
 
     def _save_thumb(
         self,
@@ -142,6 +302,18 @@ class LibraryFileRouteService:
         return None
 
     def handle_post(self, handler, path, body):
+        if path == "/api/v2/user/presets/save":
+            data, error = self._parse_json_object(body)
+            if error is not None:
+                return error
+            return self._save_preset(handler, data)
+
+        if path == "/api/v2/user/presets/delete":
+            data, error = self._parse_json_object(body)
+            if error is not None:
+                return error
+            return self._delete_preset(data)
+
         if path == "/api/v2/assets/thumb/save":
             data, error = self._parse_json_object(body)
             if error is not None:
@@ -165,7 +337,7 @@ class LibraryFileRouteService:
                 default_key="cover",
                 id_required_message="Workflow ID required",
                 target_dir=self._get_workflow_thumbs_dir(),
-                relative_prefix="data/workflows/thumbs",
+                relative_prefix="data/assets/workflows/thumbs",
             )
 
         return None

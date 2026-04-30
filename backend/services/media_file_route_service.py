@@ -1,9 +1,11 @@
+import hashlib
 import ipaddress
 import json
 import os
 import re
 import socket
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -33,6 +35,7 @@ class MediaFileRouteService:
         atomic_write_json,
         read_body,
         user_dir_getter=None,
+        assets_dir_getter=None,
         ffprobe_getter=lambda: "ffprobe",
         image_derivative_display_max_edge=1280,
         image_derivative_thumb_max_edge=320,
@@ -43,6 +46,7 @@ class MediaFileRouteService:
         self.directory = os.path.abspath(directory)
         self._get_uploads_dir = uploads_dir_getter
         self._get_user_dir = user_dir_getter or (lambda: self.directory)
+        self._get_assets_dir = assets_dir_getter or (lambda: os.path.join(self.directory, "data", "assets"))
         self._get_output_dir = output_dir_getter
         self.max_upload_bytes = int(max_upload_bytes or 0)
         self._next_output_filename = next_output_filename
@@ -55,6 +59,8 @@ class MediaFileRouteService:
         self.image_derivative_display_quality = int(image_derivative_display_quality)
         self.image_derivative_thumb_quality = int(image_derivative_thumb_quality)
         self.image_derivative_root_dirname = str(image_derivative_root_dirname or "_derived")
+        self._save_output_from_url_lock = threading.Lock()
+        self._save_output_from_url_inflight = {}
 
     @staticmethod
     def _json_ok(data):
@@ -81,6 +87,39 @@ class MediaFileRouteService:
     @staticmethod
     def _normalize_posix_rel_path(path_value):
         return str(path_value or "").replace("\\", "/").strip("/")
+
+    @classmethod
+    def normalize_virtual_local_path(cls, path_value):
+        raw = str(path_value or "").strip()
+        if not raw:
+            return ""
+        slash_path = raw.replace("\\", "/")
+        lower = slash_path.lower()
+        if re.match(r"^[a-z][a-z0-9+.-]*:", lower):
+            return ""
+        if re.match(r"^[a-zA-Z]:/", slash_path) or slash_path.startswith("//"):
+            return ""
+        try:
+            path_part = urllib.parse.urlsplit(slash_path).path
+        except Exception:
+            path_part = slash_path
+        decoded = urllib.parse.unquote(path_part).strip().lstrip("/")
+        parts = []
+        for part in decoded.split("/"):
+            segment = part.strip()
+            if not segment or segment == ".":
+                continue
+            if segment == "..":
+                return ""
+            parts.append(segment)
+        normalized = "/".join(parts)
+        if normalized.startswith("output/"):
+            return normalized
+        if normalized.startswith("data/uploads/"):
+            return normalized
+        if normalized.startswith("data/assets/"):
+            return normalized
+        return ""
 
     @classmethod
     def _join_virtual_local_path(cls, root_prefix, rel_path):
@@ -131,11 +170,94 @@ class MediaFileRouteService:
     def _user_dir(self):
         return os.path.abspath(self._get_user_dir())
 
+    def _assets_dir(self):
+        return os.path.abspath(self._get_assets_dir())
+
     def _output_index_file(self):
         return os.path.join(self._user_dir(), OUTPUT_INDEX_FILENAME)
 
     def _ffprobe(self):
         return str(self._get_ffprobe() or "ffprobe")
+
+    @staticmethod
+    def _hash_dedupe_key(value):
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _get_output_url_dedupe_map(self, index_data):
+        root_index = self._ensure_output_index_root(index_data, self._output_dir())
+        mapping = root_index.get("savedUrlOutputs")
+        if not isinstance(mapping, dict):
+            mapping = {}
+            root_index["savedUrlOutputs"] = mapping
+        return mapping
+
+    def _lookup_saved_output_from_url(self, dedupe_hash):
+        key = str(dedupe_hash or "").strip()
+        if not key:
+            return None
+        index_data = self._load_output_index()
+        mapping = self._get_output_url_dedupe_map(index_data)
+        item = mapping.get(key)
+        if not isinstance(item, dict):
+            return None
+        local_path = str(item.get("localPath") or item.get("path") or "").strip()
+        abs_path = self.resolve_local_virtual_path(local_path)
+        if (
+            local_path.startswith("output/")
+            and abs_path
+            and self._is_path_inside(abs_path, self._output_dir())
+            and os.path.isfile(abs_path)
+        ):
+            return local_path, abs_path
+        try:
+            mapping.pop(key, None)
+            self._save_output_index(index_data)
+        except Exception:
+            pass
+        return None
+
+    def _remember_saved_output_from_url(self, dedupe_hash, local_path, url):
+        key = str(dedupe_hash or "").strip()
+        path = str(local_path or "").strip()
+        if not key or not path.startswith("output/"):
+            return
+        index_data = self._load_output_index()
+        mapping = self._get_output_url_dedupe_map(index_data)
+        mapping[key] = {
+            "localPath": path,
+            "url": str(url or "").strip(),
+            "savedAt": int(time.time() * 1000),
+        }
+        self._save_output_index(index_data)
+
+    def _wait_for_save_output_from_url_owner(self, dedupe_hash):
+        key = str(dedupe_hash or "").strip()
+        if not key:
+            return None
+        while True:
+            cached = self._lookup_saved_output_from_url(key)
+            if cached:
+                return cached
+            with self._save_output_from_url_lock:
+                event = self._save_output_from_url_inflight.get(key)
+                if event is None:
+                    event = threading.Event()
+                    self._save_output_from_url_inflight[key] = event
+                    return event
+            event.wait()
+
+    def _finish_save_output_from_url_owner(self, dedupe_hash, event):
+        key = str(dedupe_hash or "").strip()
+        if not key or event is None:
+            return
+        with self._save_output_from_url_lock:
+            current = self._save_output_from_url_inflight.get(key)
+            if current is event:
+                self._save_output_from_url_inflight.pop(key, None)
+                event.set()
 
     @classmethod
     def _classify_media_kind(cls, filename):
@@ -149,13 +271,16 @@ class MediaFileRouteService:
         return "file"
 
     def resolve_virtual_media_root(self, local_path=None, abs_path=None):
-        norm_local = self._normalize_posix_rel_path(local_path)
+        norm_local = self.normalize_virtual_local_path(local_path)
         if norm_local.startswith("output/"):
             rel = norm_local[len("output/") :].lstrip("/")
             return self._output_dir(), "output", rel
         if norm_local.startswith("data/uploads/"):
             rel = norm_local[len("data/uploads/") :].lstrip("/")
             return self._uploads_dir(), "data/uploads", rel
+        if norm_local.startswith("data/assets/"):
+            rel = norm_local[len("data/assets/") :].lstrip("/")
+            return self._assets_dir(), "data/assets", rel
 
         abs_candidate = os.path.abspath(abs_path) if abs_path else None
         if abs_candidate and self._is_path_inside(abs_candidate, self._output_dir()):
@@ -164,26 +289,28 @@ class MediaFileRouteService:
         if abs_candidate and self._is_path_inside(abs_candidate, self._uploads_dir()):
             rel = os.path.relpath(abs_candidate, self._uploads_dir()).replace("\\", "/")
             return self._uploads_dir(), "data/uploads", rel
+        if abs_candidate and self._is_path_inside(abs_candidate, self._assets_dir()):
+            rel = os.path.relpath(abs_candidate, self._assets_dir()).replace("\\", "/")
+            return self._assets_dir(), "data/assets", rel
         return None, None, None
 
     def resolve_local_virtual_path(self, src_path):
-        safe_src = str(src_path or "").strip().lstrip("/")
-        norm_src = os.path.normpath(safe_src)
-        if (
-            not safe_src
-            or norm_src.startswith("..")
-            or norm_src.startswith("../")
-            or norm_src.startswith("..\\")
-        ):
+        norm_slash = self.normalize_virtual_local_path(src_path)
+        if not norm_slash:
             return None
-        norm_slash = norm_src.replace("\\", "/")
         if norm_slash.startswith("output/"):
             rel = norm_slash[len("output/") :].lstrip("/")
-            return os.path.abspath(os.path.join(self._output_dir(), rel))
+            path = os.path.abspath(os.path.join(self._output_dir(), *rel.split("/")))
+            return path if self._is_path_inside(path, self._output_dir()) else None
         if norm_slash.startswith("data/uploads/"):
             rel = norm_slash[len("data/uploads/") :].lstrip("/")
-            return os.path.abspath(os.path.join(self._uploads_dir(), rel))
-        return os.path.abspath(os.path.join(self.directory, norm_src))
+            path = os.path.abspath(os.path.join(self._uploads_dir(), *rel.split("/")))
+            return path if self._is_path_inside(path, self._uploads_dir()) else None
+        if norm_slash.startswith("data/assets/"):
+            rel = norm_slash[len("data/assets/") :].lstrip("/")
+            path = os.path.abspath(os.path.join(self._assets_dir(), *rel.split("/")))
+            return path if self._is_path_inside(path, self._assets_dir()) else None
+        return None
 
     @staticmethod
     def _image_variant_needs_alpha(img):
@@ -598,57 +725,81 @@ class MediaFileRouteService:
         if host_error is not None:
             return host_error
 
+        dedupe_hash = self._hash_dedupe_key(data.get("dedupeKey") or url)
+        dedupe_owner = self._wait_for_save_output_from_url_owner(dedupe_hash)
+        if isinstance(dedupe_owner, tuple):
+            rel_path, cached_path = dedupe_owner
+            filename = os.path.basename(cached_path)
+            return self._json_ok(
+                self.augment_saved_media_response(
+                    {
+                        "success": True,
+                        "filename": filename,
+                        "path": rel_path,
+                        "localPath": rel_path,
+                        "url": f"/{rel_path}",
+                        "deduped": True,
+                    },
+                    cached_path,
+                    rel_path,
+                )
+            )
+
         try:
             max_bytes = int(data.get("maxBytes") or 1024 * 1024 * 300)
         except Exception:
             max_bytes = 1024 * 1024 * 300
 
-        request = urllib.request.Request(url, method="GET")
-        request.add_header("User-Agent", "AI-Canvas/1.0")
         try:
-            with urllib.request.urlopen(request, timeout=120) as resp:
-                content_type = resp.headers.get("Content-Type") or ""
-                ext = (data.get("ext") or "").strip().lower()
-                if not re.match(r"^[a-z0-9]{1,5}$", ext):
-                    ext = ""
-                if not ext:
-                    ext = self._extension_from_content_type(content_type)
-                filename = self._next_output_filename(ext)
-                fpath = os.path.join(self._output_dir(), filename)
-                total = 0
-                os.makedirs(os.path.dirname(fpath), exist_ok=True)
-                with open(fpath, "wb") as file:
-                    while True:
-                        chunk = resp.read(1024 * 256)
-                        if not chunk:
-                            break
-                        total += len(chunk)
-                        if total > max_bytes:
-                            try:
-                                os.remove(fpath)
-                            except Exception:
-                                pass
-                            return self._json_err(413, "File too large")
-                        file.write(chunk)
-        except urllib.error.HTTPError as exc:
-            return self._json_err(502, f"Download HTTPError: {exc.code}")
-        except Exception as exc:
-            return self._json_err(502, f"Download failed: {str(exc)}")
+            request = urllib.request.Request(url, method="GET")
+            request.add_header("User-Agent", "AI-Canvas/1.0")
+            try:
+                with urllib.request.urlopen(request, timeout=120) as resp:
+                    content_type = resp.headers.get("Content-Type") or ""
+                    ext = (data.get("ext") or "").strip().lower()
+                    if not re.match(r"^[a-z0-9]{1,5}$", ext):
+                        ext = ""
+                    if not ext:
+                        ext = self._extension_from_content_type(content_type)
+                    filename = self._next_output_filename(ext)
+                    fpath = os.path.join(self._output_dir(), filename)
+                    total = 0
+                    os.makedirs(os.path.dirname(fpath), exist_ok=True)
+                    with open(fpath, "wb") as file:
+                        while True:
+                            chunk = resp.read(1024 * 256)
+                            if not chunk:
+                                break
+                            total += len(chunk)
+                            if total > max_bytes:
+                                try:
+                                    os.remove(fpath)
+                                except Exception:
+                                    pass
+                                return self._json_err(413, "File too large")
+                            file.write(chunk)
+            except urllib.error.HTTPError as exc:
+                return self._json_err(502, f"Download HTTPError: {exc.code}")
+            except Exception as exc:
+                return self._json_err(502, f"Download failed: {str(exc)}")
 
-        rel_path = f"output/{filename}"
-        return self._json_ok(
-            self.augment_saved_media_response(
-                {
-                    "success": True,
-                    "filename": filename,
-                    "path": rel_path,
-                    "localPath": rel_path,
-                    "url": f"/{rel_path}",
-                },
-                fpath,
-                rel_path,
+            rel_path = f"output/{filename}"
+            self._remember_saved_output_from_url(dedupe_hash, rel_path, url)
+            return self._json_ok(
+                self.augment_saved_media_response(
+                    {
+                        "success": True,
+                        "filename": filename,
+                        "path": rel_path,
+                        "localPath": rel_path,
+                        "url": f"/{rel_path}",
+                    },
+                    fpath,
+                    rel_path,
+                )
             )
-        )
+        finally:
+            self._finish_save_output_from_url_owner(dedupe_hash, dedupe_owner)
 
     @staticmethod
     def _parse_grid_count(value):
@@ -743,7 +894,7 @@ class MediaFileRouteService:
                 return self._json_err(404, "Image not found")
 
             root_abs, root_prefix, _ = self.resolve_virtual_media_root(local_path, abs_path)
-            if root_prefix not in ("output", "data/uploads") or not self._is_path_inside(abs_path, root_abs):
+            if root_prefix not in ("output", "data/uploads", "data/assets") or not self._is_path_inside(abs_path, root_abs):
                 return self._json_err(403, "Image path is not allowed")
 
             cols = self._parse_grid_count(data.get("cols"))

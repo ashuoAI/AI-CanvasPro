@@ -42,6 +42,7 @@
 !macroend
 
 !macro customRemoveFiles
+  !insertmacro preserveInstallDirectory "Data"
   !insertmacro preserveInstallDirectory "Canvas Project"
   !insertmacro preserveInstallDirectory "output"
   !insertmacro preserveInstallDirectory "data"
@@ -50,6 +51,7 @@
   SetOutPath $TEMP
   RMDir /r "$INSTDIR"
 
+  !insertmacro restoreInstallDirectory "Data"
   !insertmacro restoreInstallDirectory "Canvas Project"
   !insertmacro restoreInstallDirectory "output"
   !insertmacro restoreInstallDirectory "data"

@@ -4,6 +4,12 @@ import time
 import urllib.parse
 
 
+SUBSCRIPTION_NETWORK_HELP_MESSAGE = (
+    "授权服务不可用，请检查网络；如果当前网络无法连接授权服务器，"
+    "请打开科学上网/代理后重试，或查看飞书文档《关于网络》。"
+)
+
+
 class HttpRouteDispatcher:
     _TRUE_VALUES = ("1", "true", "yes", "on")
 
@@ -91,7 +97,7 @@ class HttpRouteDispatcher:
             "success": False,
             "status": self._sub_status_none,
             "errorCode": "SUBSCRIPTION_SERVICE_UNAVAILABLE",
-            "message": "授权服务不可用",
+            "message": SUBSCRIPTION_NETWORK_HELP_MESSAGE,
             "contactText": self._default_sub_contact_text,
             "contactUrl": self._default_sub_contact_url,
         }
@@ -298,6 +304,21 @@ class HttpRouteDispatcher:
         if path == "/api/v2/subscription/activate":
             return self._handle_subscription_activate(handler)
 
+        library_file_post_paths = (
+            "/api/v2/assets/thumb/save",
+            "/api/v2/workflows/thumb/save",
+            "/api/v2/user/presets/save",
+            "/api/v2/user/presets/delete",
+        )
+        library_file_post_response = self._get_library_file_route_service().handle_post(
+            handler,
+            path,
+            self._read_body(handler) if path in library_file_post_paths else b"",
+        )
+        if library_file_post_response is not None:
+            self._send_route_response(handler, library_file_post_response)
+            return True
+
         config_post_response = self._get_config_route_service().handle_post(
             handler,
             path,
@@ -325,21 +346,6 @@ class HttpRouteDispatcher:
         )
         if json_file_post_response is not None:
             self._send_route_response(handler, json_file_post_response)
-            return True
-
-        library_file_post_response = self._get_library_file_route_service().handle_post(
-            handler,
-            path,
-            self._read_body(handler)
-            if path
-            in (
-                "/api/v2/assets/thumb/save",
-                "/api/v2/workflows/thumb/save",
-            )
-            else b"",
-        )
-        if library_file_post_response is not None:
-            self._send_route_response(handler, library_file_post_response)
             return True
 
         dreamina_post_response = self._get_dreamina_route_service().handle_post(

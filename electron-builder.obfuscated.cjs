@@ -4,7 +4,7 @@ module.exports = {
   ...build,
   directories: {
     ...(build.directories || {}),
-    app: "release/electron-obfuscated-app",
+    app: "release/obfuscated-code",
     output: "dist-obfuscated",
   },
 };
