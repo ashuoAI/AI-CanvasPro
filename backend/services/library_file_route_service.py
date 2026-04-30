@@ -6,6 +6,7 @@ import re
 
 class LibraryFileRouteService:
     _DEFAULT_PRESET_TYPES = ("ai-image", "ai-text", "ai-video", "ai-audio")
+    _PRESET_THUMB_USER_PREFIX = "user/prompt/_thumbs/presets/"
 
     def __init__(
         self,
@@ -87,6 +88,58 @@ class LibraryFileRouteService:
             return ""
         return os.path.join(self._preset_dir(preset_type), f"{safe_title}.json")
 
+    @staticmethod
+    def _normalize_preset_thumb_local_path(value):
+        local_path = str(value or "").strip().replace("\\", "/").lstrip("/")
+        if not local_path.startswith(LibraryFileRouteService._PRESET_THUMB_USER_PREFIX):
+            return ""
+        return local_path
+
+    def _preset_thumb_user_root(self):
+        return os.path.join(self._get_user_dir(), "prompt", "_thumbs")
+
+    def _preset_thumb_abs_path(self, local_path):
+        normalized = self._normalize_preset_thumb_local_path(local_path)
+        if not normalized:
+            return ""
+        rel = normalized[len("user/prompt/_thumbs/") :].lstrip("/")
+        root = os.path.abspath(self._preset_thumb_user_root())
+        abs_path = os.path.abspath(os.path.join(root, rel))
+        if abs_path != root and not abs_path.startswith(root + os.sep):
+            return ""
+        return abs_path
+
+    def _remove_preset_thumb(self, local_path):
+        abs_path = self._preset_thumb_abs_path(local_path)
+        if abs_path and os.path.exists(abs_path):
+            try:
+                os.remove(abs_path)
+            except FileNotFoundError:
+                pass
+
+    def _save_preset_thumb(self, preset_type, title, data_url):
+        if not isinstance(data_url, str) or not data_url.startswith("data:image/"):
+            return "", self._json_err(400, "Invalid thumbnailDataUrl")
+        try:
+            header, encoded = data_url.split(",", 1)
+        except Exception:
+            return "", self._json_err(400, "Invalid thumbnailDataUrl")
+        try:
+            raw = base64.b64decode(encoded)
+        except Exception:
+            return "", self._json_err(400, "Invalid thumbnail base64")
+
+        extension = self._extension_from_data_url_header(header)
+        safe_title = self._safe_name(str(title or "").strip()).strip()
+        if not safe_title:
+            return "", self._json_err(400, "Invalid preset title")
+        target_dir = os.path.join(self._preset_thumb_user_root(), "presets", preset_type)
+        os.makedirs(target_dir, exist_ok=True)
+        filename = f"{safe_title}{extension}"
+        with open(os.path.join(target_dir, filename), "wb") as file:
+            file.write(raw)
+        return f"user/prompt/_thumbs/presets/{preset_type}/{filename}", None
+
     def _is_subscription_active(self, handler, payload):
         if not callable(self._get_subscription_gate_service):
             return False
@@ -152,6 +205,12 @@ class LibraryFileRouteService:
                                     )
                                     if desc:
                                         item["desc"] = desc
+                                    thumb_local_path = self._normalize_preset_thumb_local_path(
+                                        meta.get("thumbLocalPath") if isinstance(meta, dict) else ""
+                                    )
+                                    if thumb_local_path:
+                                        item["thumbLocalPath"] = thumb_local_path
+                                        item["thumbUrl"] = f"/{thumb_local_path}"
                                 except Exception as exc:
                                     print(f"Error reading preset metadata {meta_path}: {exc}")
                             result[node_type].append(item)
@@ -167,6 +226,10 @@ class LibraryFileRouteService:
         desc = self._normalize_preset_desc(
             data.get("desc") if "desc" in data else data.get("description")
         )
+        thumb_local_path = self._normalize_preset_thumb_local_path(
+            data.get("thumbLocalPath") or data.get("thumbnailLocalPath")
+        )
+        thumbnail_data_url = str(data.get("thumbnailDataUrl") or "").strip()
         if not preset_type:
             return self._json_err(400, "Invalid nodeType")
         if not title:
@@ -201,10 +264,37 @@ class LibraryFileRouteService:
 
         with open(target_path, "w", encoding="utf-8") as file:
             file.write(template)
+        original_thumb_local_path = ""
+        original_meta_path = self._preset_meta_path(preset_type, original_title)
+        if original_meta_path and os.path.exists(original_meta_path):
+            try:
+                with open(original_meta_path, "r", encoding="utf-8") as meta_file:
+                    original_meta = json.load(meta_file)
+                if isinstance(original_meta, dict):
+                    original_thumb_local_path = self._normalize_preset_thumb_local_path(
+                        original_meta.get("thumbLocalPath")
+                    )
+            except Exception:
+                original_thumb_local_path = ""
+
+        if thumbnail_data_url:
+            next_thumb_path, thumb_error = self._save_preset_thumb(
+                preset_type,
+                title,
+                thumbnail_data_url,
+            )
+            if thumb_error is not None:
+                return thumb_error
+            thumb_local_path = next_thumb_path
         target_meta_path = self._preset_meta_path(preset_type, title)
-        if desc and target_meta_path:
+        meta_payload = {}
+        if desc:
+            meta_payload["desc"] = desc
+        if thumb_local_path:
+            meta_payload["thumbLocalPath"] = thumb_local_path
+        if meta_payload and target_meta_path:
             with open(target_meta_path, "w", encoding="utf-8") as file:
-                json.dump({"desc": desc}, file, ensure_ascii=False)
+                json.dump(meta_payload, file, ensure_ascii=False)
         elif target_meta_path and os.path.exists(target_meta_path):
             os.remove(target_meta_path)
         if original_path != target_path and original_exists:
@@ -212,17 +302,19 @@ class LibraryFileRouteService:
                 os.remove(original_path)
             except FileNotFoundError:
                 pass
-            original_meta_path = self._preset_meta_path(preset_type, original_title)
             if original_meta_path and os.path.exists(original_meta_path):
                 try:
                     os.remove(original_meta_path)
                 except FileNotFoundError:
                     pass
+        if original_thumb_local_path and original_thumb_local_path != thumb_local_path:
+            self._remove_preset_thumb(original_thumb_local_path)
         return self._json_ok(
             {
                 "success": True,
                 "nodeType": preset_type,
                 "title": title,
+                "thumbLocalPath": thumb_local_path,
             }
         )
 
@@ -234,11 +326,24 @@ class LibraryFileRouteService:
         if not title:
             return self._json_err(400, "Preset title required")
         path = self._preset_path(preset_type, title)
-        if path and os.path.exists(path):
-            os.remove(path)
+        thumb_local_path = ""
         meta_path = self._preset_meta_path(preset_type, title)
         if meta_path and os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as meta_file:
+                    meta = json.load(meta_file)
+                if isinstance(meta, dict):
+                    thumb_local_path = self._normalize_preset_thumb_local_path(
+                        meta.get("thumbLocalPath")
+                    )
+            except Exception:
+                thumb_local_path = ""
+        if path and os.path.exists(path):
+            os.remove(path)
+        if meta_path and os.path.exists(meta_path):
             os.remove(meta_path)
+        if thumb_local_path:
+            self._remove_preset_thumb(thumb_local_path)
         return self._json_ok(
             {
                 "success": True,

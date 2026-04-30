@@ -24,11 +24,24 @@ class DreaminaCliService:
     _LOGIN_PAGE_URL = "https://jimeng.jianying.com/"
     _ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-9;?]*[ -/]*[@-~]")
 
-    def __init__(self, config_file, output_root_dir=None):
+    def __init__(
+        self,
+        config_file,
+        output_root_dir=None,
+        output_dir_getter=None,
+        uploads_dir_getter=None,
+        assets_dir_getter=None,
+    ):
         self._config_file = os.path.abspath(config_file)
         self._user_dir = os.path.dirname(self._config_file)
         self._workspace_dir = os.path.dirname(self._user_dir)
-        self._output_root_dir = os.path.abspath(output_root_dir) if output_root_dir else os.path.join(self._workspace_dir, "output")
+        output_root = output_root_dir
+        if output_root is None and callable(output_dir_getter):
+            output_root = output_dir_getter()
+        self._output_root_dir = os.path.abspath(output_root) if output_root else os.path.join(self._workspace_dir, "output")
+        self._output_dir_getter = output_dir_getter or (lambda: self._output_root_dir)
+        self._uploads_dir_getter = uploads_dir_getter or (lambda: os.path.join(self._workspace_dir, "data", "uploads"))
+        self._assets_dir_getter = assets_dir_getter or (lambda: os.path.join(self._workspace_dir, "data", "assets"))
         self._dreamina_output_root = os.path.join(self._output_root_dir, "dreamina")
         self._dreamina_video_output_dir = self._output_root_dir
         self._dreamina_download_tmp_root = os.path.join(self._user_dir, "dreamina_downloads")
@@ -757,22 +770,92 @@ class DreaminaCliService:
         except Exception:
             return False
 
+    @staticmethod
+    def _is_path_inside(path, root):
+        try:
+            path_abs = os.path.abspath(path)
+            root_abs = os.path.abspath(root)
+            return os.path.commonpath([path_abs, root_abs]) == root_abs
+        except Exception:
+            return False
+
+    @staticmethod
+    def _safe_get_dir(getter, fallback):
+        try:
+            value = getter() if callable(getter) else getter
+        except Exception:
+            value = ""
+        return os.path.abspath(value or fallback)
+
+    def _output_dir(self):
+        return self._safe_get_dir(self._output_dir_getter, self._output_root_dir)
+
+    def _uploads_dir(self):
+        return self._safe_get_dir(
+            self._uploads_dir_getter,
+            os.path.join(self._workspace_dir, "data", "uploads"),
+        )
+
+    def _assets_dir(self):
+        return self._safe_get_dir(
+            self._assets_dir_getter,
+            os.path.join(self._workspace_dir, "data", "assets"),
+        )
+
+    @staticmethod
+    def _normalize_virtual_media_path(value):
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        slash_path = raw.replace("\\", "/")
+        lower = slash_path.lower()
+        if re.match(r"^[a-z][a-z0-9+.-]*:", lower):
+            return ""
+        if re.match(r"^[a-zA-Z]:/", slash_path) or slash_path.startswith("//"):
+            return ""
+        try:
+            path_part = urllib.parse.urlsplit(slash_path).path
+        except Exception:
+            path_part = slash_path
+        decoded = urllib.parse.unquote(path_part).strip().lstrip("/")
+        parts = []
+        for part in decoded.split("/"):
+            segment = part.strip()
+            if not segment or segment == ".":
+                continue
+            if segment == "..":
+                return ""
+            parts.append(segment)
+        normalized = "/".join(parts)
+        if (
+            normalized.startswith("output/")
+            or normalized.startswith("data/uploads/")
+            or normalized.startswith("data/assets/")
+        ):
+            return normalized
+        return ""
+
     def _resolve_local_media_path(self, value):
         raw = str(value or "").strip()
         if not raw:
             return ""
         if os.path.isabs(raw) and os.path.isfile(raw):
             return os.path.abspath(raw)
-        candidate_list = []
-        normalized = raw.replace("\\", "/")
-        if normalized.startswith("/"):
-            candidate_list.append(os.path.join(self._workspace_dir, normalized.lstrip("/")))
-        candidate_list.append(os.path.join(self._workspace_dir, normalized.lstrip("/")))
-        candidate_list.append(os.path.join(self._workspace_dir, raw))
-        candidate_list.append(os.path.join(self._user_dir, raw))
-        for path in candidate_list:
-            full = os.path.abspath(path)
-            if os.path.isfile(full):
+
+        normalized = self._normalize_virtual_media_path(raw)
+        if not normalized:
+            return ""
+        roots = (
+            ("output/", self._output_dir()),
+            ("data/uploads/", self._uploads_dir()),
+            ("data/assets/", self._assets_dir()),
+        )
+        for prefix, root in roots:
+            if not normalized.startswith(prefix):
+                continue
+            rel = normalized[len(prefix) :].lstrip("/")
+            full = os.path.abspath(os.path.join(root, *rel.split("/")))
+            if self._is_path_inside(full, root) and os.path.isfile(full):
                 return full
         return ""
 
@@ -921,10 +1004,33 @@ class DreaminaCliService:
 
     def _relative_output_path(self, abs_path):
         full = os.path.abspath(abs_path)
+        virtual_roots = (
+            (self._output_dir(), "output"),
+            (self._uploads_dir(), "data/uploads"),
+            (self._assets_dir(), "data/assets"),
+        )
+        for root_dir, root_prefix in virtual_roots:
+            root = os.path.abspath(root_dir)
+            if full == root:
+                return root_prefix
+            if full.startswith(root + os.sep):
+                rel = os.path.relpath(full, root).replace("\\", "/")
+                return f"{root_prefix}/{rel}".strip("/")
         root = os.path.abspath(self._workspace_dir)
         if full.startswith(root + os.sep):
             return full[len(root) + 1 :].replace("\\", "/")
         return full.replace("\\", "/")
+
+    def _resolve_stored_output_path(self, stored_path):
+        raw = str(stored_path or "").strip()
+        if not raw:
+            return ""
+        if os.path.isabs(raw):
+            return os.path.abspath(raw)
+        virtual_path = self._resolve_local_media_path(raw)
+        if virtual_path:
+            return virtual_path
+        return os.path.abspath(os.path.join(self._workspace_dir, raw))
 
     def _build_download_dir(self, task_type, submit_id):
         safe_task_type = re.sub(r"[^a-z0-9_-]+", "", str(task_type or "").lower()) or "unknown"
@@ -986,10 +1092,7 @@ class DreaminaCliService:
             rel = str(index.get(key) or "").strip()
             if not rel:
                 return ""
-            abs_path = rel
-            if not os.path.isabs(abs_path):
-                abs_path = os.path.join(self._workspace_dir, rel)
-            abs_path = os.path.abspath(abs_path)
+            abs_path = self._resolve_stored_output_path(rel)
             if os.path.isfile(abs_path):
                 duplicate = os.path.abspath(str(duplicate_abs_path or ""))
                 if duplicate and duplicate != abs_path and os.path.isfile(duplicate):
@@ -1016,14 +1119,11 @@ class DreaminaCliService:
         rel = str(local_path or "").strip()
         if not rel:
             return rel
-        abs_path = rel
-        if not os.path.isabs(abs_path):
-            abs_path = os.path.join(self._workspace_dir, rel)
-        abs_path = os.path.abspath(abs_path)
+        abs_path = self._resolve_stored_output_path(rel)
         if not os.path.isfile(abs_path):
             return rel.replace("\\", "/")
 
-        output_dir = os.path.abspath(self._dreamina_video_output_dir)
+        output_dir = self._output_dir()
         os.makedirs(output_dir, exist_ok=True)
         dedupe_key = self._flatten_dedupe_key(abs_path, task_type, submit_id)
         cached = self._lookup_flattened_output(dedupe_key, abs_path)
@@ -1195,6 +1295,73 @@ class DreaminaCliService:
         if not isinstance(data, dict):
             return outputs
         seen = set()
+        output_container_keys = {
+            "data",
+            "result",
+            "results",
+            "output",
+            "outputs",
+            "image",
+            "images",
+            "image_list",
+            "imageList",
+            "image_infos",
+            "imageInfos",
+            "video",
+            "videos",
+            "video_list",
+            "videoList",
+            "video_infos",
+            "videoInfos",
+            "media",
+            "medias",
+            "media_list",
+            "mediaList",
+            "file",
+            "files",
+            "file_list",
+            "fileList",
+            "resources",
+            "resource",
+            "download",
+            "downloads",
+            "content",
+            "contents",
+        }
+        url_keys = (
+            "url",
+            "uri",
+            "download_url",
+            "downloadUrl",
+            "file_url",
+            "fileUrl",
+            "media_url",
+            "mediaUrl",
+            "image_url",
+            "imageUrl",
+            "origin_image_url",
+            "originImageUrl",
+            "original_image_url",
+            "originalImageUrl",
+            "result_image_url",
+            "resultImageUrl",
+            "video_url",
+            "videoUrl",
+            "cover_url",
+            "coverUrl",
+            "src",
+        )
+        local_path_keys = (
+            "local_path",
+            "localPath",
+            "path",
+            "file_path",
+            "filePath",
+            "download_path",
+            "downloadPath",
+            "local_uri",
+            "localUri",
+        )
 
         def push(url_value="", local_path_value="", mime_type_value=""):
             url = str(url_value or "").strip()
@@ -1219,6 +1386,59 @@ class DreaminaCliService:
                 item["mimeType"] = mime_type
             outputs.append(item)
 
+        def first_value(item, keys):
+            for key in keys:
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            return ""
+
+        def should_visit_output_key(key):
+            normalized_key = str(key or "")
+            lower_key = normalized_key.lower()
+            if (
+                "input" in lower_key
+                or "reference" in lower_key
+                or "prompt" in lower_key
+            ):
+                return False
+            return (
+                normalized_key in output_container_keys
+                or "output" in lower_key
+                or "result" in lower_key
+                or "image" in lower_key
+                or "video" in lower_key
+                or "media" in lower_key
+                or "file" in lower_key
+                or "url" in lower_key
+                or "uri" in lower_key
+            )
+
+        def visit(value, depth=0):
+            if value is None or depth > 8:
+                return
+            if isinstance(value, str):
+                text = value.strip()
+                if text.startswith("http://") or text.startswith("https://"):
+                    push(url_value=text)
+                return
+            if isinstance(value, list):
+                for child in value:
+                    visit(child, depth + 1)
+                return
+            if not isinstance(value, dict):
+                return
+
+            push(
+                url_value=first_value(value, url_keys),
+                local_path_value=first_value(value, local_path_keys),
+                mime_type_value=value.get("mimeType") or value.get("mime_type"),
+            )
+
+            for key, child in value.items():
+                if should_visit_output_key(key):
+                    visit(child, depth + 1)
+
         if download_dir_abs and os.path.isdir(download_dir_abs):
             for root, _, files in os.walk(download_dir_abs):
                 for name in sorted(files):
@@ -1226,36 +1446,7 @@ class DreaminaCliService:
                     if os.path.isfile(full):
                         push(local_path_value=full)
 
-        buckets = []
-        for key in ("results", "result", "data", "output", "outputs"):
-            value = data.get(key)
-            if isinstance(value, list):
-                buckets.extend(value)
-            elif isinstance(value, dict):
-                buckets.append(value)
-
-        for item in buckets:
-            if isinstance(item, str):
-                if item.startswith("http://") or item.startswith("https://"):
-                    push(url_value=item)
-                continue
-            if not isinstance(item, dict):
-                continue
-            push(
-                url_value=(
-                    item.get("url")
-                    or item.get("image_url")
-                    or item.get("imageUrl")
-                    or item.get("video_url")
-                    or item.get("videoUrl")
-                ),
-                local_path_value=(
-                    item.get("local_path")
-                    or item.get("localPath")
-                    or item.get("path")
-                ),
-                mime_type_value=item.get("mimeType") or item.get("mime_type"),
-            )
+        visit(data)
         return outputs
 
     def _submit_generation_task(self, task_type, subcommand, payload, args_builder):

@@ -821,7 +821,13 @@ def _refresh_storage_globals(paths):
     SETTINGS_FILE = os.path.join(USER_DIR, "settings.json")
     GEN_SEQ_STATE_FILE = os.path.join(OUTPUT_DIR, ".gen_seq_state.json")
     try:
-        DREAMINA_CLI_SERVICE = DreaminaCliService(CONFIG_FILE, output_root_dir=OUTPUT_DIR)
+        DREAMINA_CLI_SERVICE = DreaminaCliService(
+            CONFIG_FILE,
+            output_root_dir=OUTPUT_DIR,
+            output_dir_getter=lambda: OUTPUT_DIR,
+            uploads_dir_getter=lambda: UPLOADS_DIR,
+            assets_dir_getter=lambda: ASSETS_DIR,
+        )
         DREAMINA_ROUTE_SERVICE = DreaminaRouteService(
             cli_service=DREAMINA_CLI_SERVICE,
             subscription_gate_service=SUBSCRIPTION_GATE_SERVICE,
@@ -930,7 +936,13 @@ except Exception:
         },
         migrate=False,
     )
-DREAMINA_CLI_SERVICE = DreaminaCliService(CONFIG_FILE, output_root_dir=OUTPUT_DIR)
+DREAMINA_CLI_SERVICE = DreaminaCliService(
+    CONFIG_FILE,
+    output_root_dir=OUTPUT_DIR,
+    output_dir_getter=lambda: OUTPUT_DIR,
+    uploads_dir_getter=lambda: UPLOADS_DIR,
+    assets_dir_getter=lambda: ASSETS_DIR,
+)
 DREAMINA_ROUTE_SERVICE = DreaminaRouteService(
     cli_service=DREAMINA_CLI_SERVICE,
     subscription_gate_service=SUBSCRIPTION_GATE_SERVICE,
@@ -1924,6 +1936,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         raw_path = urllib.parse.urlsplit(path).path
         decoded_path = urllib.parse.unquote(raw_path).replace("\\", "/")
         virtual_roots = (
+            ("/user/prompt/_thumbs/", os.path.join(USER_DIR, "prompt", "_thumbs")),
             ("/data/workflows/", WORKFLOWS_DIR),
         )
         media_path = _resolve_local_virtual_path(decoded_path)

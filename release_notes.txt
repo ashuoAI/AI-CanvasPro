@@ -1,3 +1,26 @@
+🎉 V0.3.3 版本更新啦！
+
+这次更新统一储存路径所以请先保存已经资源再操作
+应用里卸载了AICanvasPro再重新安装
+现在默认储存路径统一到 安装目录/user-data  
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV17soQB7EwB/
+
+✨ 新增功能：
+- 新增 /预设自定义 
+- 组节点入参
+ 
+🐛 修复与优化：
+- 各种修复
+- 各种修复
+- 各种修复
+
+
+AI-CanvasPro！ windows 应用版本已发布 欢迎体验！ mac版本后续再上 （主要是没得测试）
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.3.2 版本更新啦！
 
 [previewVideoUrl]: https://www.bilibili.com/video/BV17soQB7EwB/
