@@ -257,10 +257,10 @@ class LibraryFileRouteService:
         creating_new = not original_exists and not target_exists
         if (
             creating_new
-            and current_count >= 3
+            and current_count >= 2
             and not self._is_subscription_active(handler, data)
         ):
-            return self._json_err(403, "未授权用户每类节点最多 3 个自定义预设")
+            return self._json_err(403, "未授权用户每类节点最多 2 个自定义预设")
 
         with open(target_path, "w", encoding="utf-8") as file:
             file.write(template)

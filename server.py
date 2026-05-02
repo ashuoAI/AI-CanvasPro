@@ -244,10 +244,16 @@ V54_VIP_MODEL_ID = "runninghub/2041741496667348994"
 V54_VIP_WORKFLOW_ID = "2041741496667348994"
 RH_VIDEO_HD_VIP_MODEL_ID = "runninghub/2047787809091620866"
 RH_VIDEO_HD_VIP_WORKFLOW_ID = "2047787809091620866"
+RH_ADVANCED_VOICE_CLONE_VIP_MODEL_ID = "runninghub/2050165249344585729"
+RH_ADVANCED_VOICE_CLONE_VIP_WORKFLOW_ID = "2050165249344585729"
+RH_ANIME_REAL_VIP_MODEL_ID = "runninghub/1994718111704158209"
+RH_ANIME_REAL_VIP_WORKFLOW_ID = "1994718111704158209"
 DREAMINA_VIDEO_VIP_MODEL_ID = "dreamina/video_vip"
 VIDEO_VIP_MODEL_IDS = (
     "runninghub/2041741496667348994",
     RH_VIDEO_HD_VIP_MODEL_ID,
+    RH_ADVANCED_VOICE_CLONE_VIP_MODEL_ID,
+    RH_ANIME_REAL_VIP_MODEL_ID,
     "dreamina/video_vip",
 )
 VIDEO_VIP_WORKFLOW_IDS = set(
@@ -257,6 +263,8 @@ VIDEO_VIP_WORKFLOW_IDS = set(
 )
 VIDEO_VIP_MODEL_NAME_MAP = {
     RH_VIDEO_HD_VIP_MODEL_ID: "视频高清",
+    RH_ADVANCED_VOICE_CLONE_VIP_MODEL_ID: "进阶声音克隆",
+    RH_ANIME_REAL_VIP_MODEL_ID: "漫画转真人",
     "runninghub/2041741496667348994": "视频编辑V5.4",
     "dreamina/video_vip": "即梦视频",
 }
@@ -385,6 +393,46 @@ def _should_ignore_system_file_save_paths(paths):
         paths.get("tempDir"),
     )
     return any(_is_path_policy_test_residue(value) for value in values)
+
+
+def _has_file_save_paths(settings):
+    return isinstance(settings, dict) and isinstance(settings.get("fileSavePaths"), dict)
+
+
+def _read_system_file_save_paths():
+    if not SYSTEM_FILE_SAVE_PATHS_ENABLED:
+        return None
+    system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
+    paths = system_settings.get("fileSavePaths") if isinstance(system_settings, dict) else None
+    if not isinstance(paths, dict) or _should_ignore_system_file_save_paths(paths):
+        return None
+    return paths
+
+
+def _clear_system_file_save_paths():
+    if not SYSTEM_FILE_SAVE_PATHS_ENABLED:
+        return
+    try:
+        system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
+        if "fileSavePaths" not in system_settings:
+            return
+        next_system_settings = dict(system_settings)
+        next_system_settings.pop("fileSavePaths", None)
+        _write_json_file(SYSTEM_SETTINGS_FILE, next_system_settings)
+    except Exception:
+        pass
+
+
+def _migrate_system_file_save_paths_to_user_settings(local_settings, paths):
+    if not isinstance(paths, dict) or _has_file_save_paths(local_settings):
+        return
+    try:
+        next_settings = dict(local_settings) if isinstance(local_settings, dict) else {}
+        next_settings["fileSavePaths"] = _normalize_file_save_paths_for_policy(paths)
+        _write_json_file(SETTINGS_FILE, next_settings)
+        _clear_system_file_save_paths()
+    except Exception:
+        pass
 
 
 def _infer_data_dir_from_temp_dir(temp_dir):
@@ -862,16 +910,6 @@ def _apply_file_save_paths(paths, migrate=False):
     return _current_file_save_paths()
 
 
-def _persist_system_file_save_paths(paths):
-    if not SYSTEM_FILE_SAVE_PATHS_ENABLED:
-        return
-    system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
-    next_system_settings = dict(system_settings)
-    next_system_settings["fileSavePaths"] = dict(paths)
-    if system_settings.get("installId"):
-        next_system_settings["installId"] = system_settings.get("installId")
-    _write_json_file(SYSTEM_SETTINGS_FILE, next_system_settings)
-
 def _is_enabled_env(name):
     try:
         value = str(os.environ.get(name, "") or "").strip().lower()
@@ -918,15 +956,19 @@ os.makedirs(SYSTEM_STATE_DIR, exist_ok=True)
 _startup_system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
 _startup_local_settings = _read_json_file(os.path.join(DEFAULT_USER_DIR, "settings.json"), {})
 _startup_settings = dict(_startup_local_settings)
-if SYSTEM_FILE_SAVE_PATHS_ENABLED and isinstance(_startup_system_settings.get("fileSavePaths"), dict):
-    _startup_system_file_save_paths = _startup_system_settings.get("fileSavePaths")
-    if not _should_ignore_system_file_save_paths(_startup_system_file_save_paths):
-        _startup_settings["fileSavePaths"] = _startup_system_file_save_paths
+_startup_system_file_save_paths = _read_system_file_save_paths()
+if not _has_file_save_paths(_startup_settings) and _startup_system_file_save_paths:
+    _startup_settings["fileSavePaths"] = _startup_system_file_save_paths
 try:
-    _apply_file_save_paths(
+    _startup_applied_file_save_paths = _apply_file_save_paths(
         _normalize_file_save_paths_for_policy(_startup_settings.get("fileSavePaths")),
         migrate=False,
     )
+    if not _has_file_save_paths(_startup_local_settings) and _startup_system_file_save_paths:
+        _migrate_system_file_save_paths_to_user_settings(
+            _startup_local_settings,
+            _startup_applied_file_save_paths,
+        )
 except Exception:
     _apply_file_save_paths(
         {
@@ -961,11 +1003,12 @@ def _read_user_settings():
 
     system_install_id = str(system_settings.get("installId") or "").strip()
     local_install_id = str(local_settings.get("installId") or "").strip()
-    system_file_save_paths = None
-    if SYSTEM_FILE_SAVE_PATHS_ENABLED and isinstance(system_settings.get("fileSavePaths"), dict):
-        candidate_paths = system_settings.get("fileSavePaths")
-        if not _should_ignore_system_file_save_paths(candidate_paths):
-            system_file_save_paths = candidate_paths
+    local_file_save_paths = (
+        local_settings.get("fileSavePaths")
+        if isinstance(local_settings.get("fileSavePaths"), dict)
+        else None
+    )
+    system_file_save_paths = _read_system_file_save_paths()
 
     # 兼容旧版本：首次读到仓库内 settings.json 的 installId 时自动迁移到系统目录。
     if not system_install_id and local_install_id:
@@ -980,8 +1023,12 @@ def _read_user_settings():
     merged = dict(local_settings)
     if system_install_id:
         merged["installId"] = system_install_id
-    if system_file_save_paths:
-        merged["fileSavePaths"] = _normalize_file_save_paths_for_policy(system_file_save_paths)
+    if local_file_save_paths:
+        merged["fileSavePaths"] = _normalize_file_save_paths_for_policy(local_file_save_paths)
+    elif system_file_save_paths:
+        normalized_paths = _normalize_file_save_paths_for_policy(system_file_save_paths)
+        merged["fileSavePaths"] = normalized_paths
+        _migrate_system_file_save_paths_to_user_settings(local_settings, normalized_paths)
     else:
         merged["fileSavePaths"] = _current_file_save_paths()
     return merged
@@ -992,7 +1039,6 @@ def _write_user_settings(data, migrate=True):
     if isinstance(payload.get("fileSavePaths"), dict):
         applied_paths = _apply_file_save_paths(payload["fileSavePaths"], migrate=bool(migrate))
         payload["fileSavePaths"] = applied_paths
-        _persist_system_file_save_paths(applied_paths)
     elif "fileSavePaths" not in payload:
         payload["fileSavePaths"] = _current_file_save_paths()
     _write_json_file(SETTINGS_FILE, payload)
@@ -1002,8 +1048,7 @@ def _write_user_settings(data, migrate=True):
     next_system_settings = dict(system_settings)
     if install_id:
         next_system_settings["installId"] = install_id
-    if SYSTEM_FILE_SAVE_PATHS_ENABLED:
-        next_system_settings["fileSavePaths"] = dict(payload.get("fileSavePaths") or _current_file_save_paths())
+    next_system_settings.pop("fileSavePaths", None)
     _write_json_file(SYSTEM_SETTINGS_FILE, next_system_settings)
 
 def _is_dev_build():

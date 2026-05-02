@@ -1091,6 +1091,77 @@ class MediaFileRouteService:
             }
         )
 
+    def _resolve_output_file_delete_path(self, local_path):
+        normalized = self._normalize_posix_rel_path(local_path)
+        if not normalized.startswith("output/"):
+            return "", ""
+        rel = normalized[len("output/") :].lstrip("/")
+        if not rel:
+            return "", ""
+        norm = os.path.normpath(rel).replace("\\", "/")
+        if norm in ("", ".") or norm.startswith("../") or norm == ".." or "/../" in f"/{norm}/":
+            return "", ""
+        output_dir = self._output_dir()
+        abs_path = os.path.abspath(os.path.join(output_dir, *[part for part in norm.split("/") if part]))
+        if not self._is_path_inside(abs_path, output_dir):
+            return "", ""
+        return abs_path, self._join_virtual_local_path("output", norm)
+
+    def _handle_output_files_delete(self, handler):
+        data, error = self._parse_json_object(self._read_body(handler))
+        if error is not None:
+            return error
+        raw_paths = data.get("localPaths")
+        if not isinstance(raw_paths, list) or len(raw_paths) == 0:
+            return self._json_err(400, "Missing localPaths")
+
+        seen = set()
+        targets = []
+        for raw_path in raw_paths:
+            abs_path, local_path = self._resolve_output_file_delete_path(raw_path)
+            if not abs_path or not local_path:
+                return self._json_err(400, "Invalid output file path")
+            if local_path in seen:
+                continue
+            seen.add(local_path)
+            if os.path.isdir(abs_path):
+                return self._json_err(400, "Deleting folders is not allowed")
+            targets.append((abs_path, local_path))
+
+        deleted = []
+        missing = []
+        for abs_path, local_path in targets:
+            if not os.path.exists(abs_path):
+                missing.append(local_path)
+                continue
+            try:
+                os.remove(abs_path)
+                deleted.append(local_path)
+            except IsADirectoryError:
+                return self._json_err(400, "Deleting folders is not allowed")
+            except Exception as exc:
+                return self._json_err(500, f"Delete output file failed: {str(exc)}")
+
+        output_index = self._load_output_index()
+        root_index = self._ensure_output_index_root(output_index, self._output_dir())
+        index_items = root_index.get("items")
+        changed_index = False
+        if isinstance(index_items, dict):
+            for local_path in deleted:
+                if local_path in index_items:
+                    del index_items[local_path]
+                    changed_index = True
+        if changed_index:
+            self._save_output_index(output_index)
+
+        return self._json_ok(
+            {
+                "success": True,
+                "deleted": deleted,
+                "missing": missing,
+            }
+        )
+
     def _load_output_index(self):
         data = self._load_json_file(self._output_index_file())
         if not isinstance(data, dict):
@@ -1284,5 +1355,8 @@ class MediaFileRouteService:
 
         if path == "/api/v2/save_output_from_url":
             return self._handle_save_output_from_url(handler)
+
+        if path == "/api/v2/output-files/delete":
+            return self._handle_output_files_delete(handler)
 
         return None

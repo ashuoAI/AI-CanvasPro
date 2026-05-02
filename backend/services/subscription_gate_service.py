@@ -38,6 +38,12 @@ class SubscriptionGateService:
             return ""
         if s == "ai-app/2047787809091620866":
             return "runninghub/2047787809091620866"
+        if s == "ai-app/2050165249344585729":
+            return "runninghub/2050165249344585729"
+        if s == "ai-app/1994718111704158209":
+            return "runninghub/1994718111704158209"
+        if s == "advanced_voice_clone":
+            return "runninghub/2050165249344585729"
         if s.startswith("runninghub/"):
             return s
         if s.startswith("dreamina/"):
