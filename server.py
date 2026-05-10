@@ -2094,6 +2094,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+
     def translate_path(self, path):
         raw_path = urllib.parse.urlsplit(path).path
         decoded_path = urllib.parse.unquote(raw_path).replace("\\", "/")
@@ -2118,9 +2124,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return os.path.abspath(os.path.join(root_dir, rel))
         return super().translate_path(path)
 
-    # 屏蔽日志噪音（按霢注释掉）
     def log_message(self, fmt, *args):
-        pass
+        print(f"[{self.client_address[0]}] {fmt % args}" if args else f"[{self.client_address[0]}] {fmt}")
 
     def send_head(self):
         path = self.translate_path(self.path)
