@@ -2091,14 +2091,25 @@ def _handle_canvas_paths_api_post(handler, path):
 
 class Handler(http.server.SimpleHTTPRequestHandler):
 
+    _request_semaphore = threading.Semaphore(100)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
     def handle(self):
+        acquired = Handler._request_semaphore.acquire(blocking=True, timeout=30)
+        if not acquired:
+            try:
+                self.send_error(503, "Service temporarily overloaded")
+            except Exception:
+                pass
+            return
         try:
             super().handle()
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
             pass
+        finally:
+            Handler._request_semaphore.release()
 
     def translate_path(self, path):
         raw_path = urllib.parse.urlsplit(path).path
