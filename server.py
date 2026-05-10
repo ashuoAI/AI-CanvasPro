@@ -55,6 +55,7 @@ from backend.services.subscription_gate_service import SubscriptionGateService
 from backend.services.subscription_client import SubscriptionRemoteClient
 from backend.services.dreamina_cli_service import DreaminaCliService
 from backend.services.dreamina_route_service import DreaminaRouteService
+from backend.services.canvas_path_manager import CanvasPathManager
 
 mimetypes.add_type("text/javascript; charset=utf-8", ".js")
 mimetypes.add_type("text/javascript; charset=utf-8", ".mjs")
@@ -221,6 +222,8 @@ FFMPEG_EXE = _get_executable_env("AIC_FFMPEG_EXE", "ffmpeg")
 FFPROBE_EXE = _get_executable_env("AIC_FFPROBE_EXE", "ffprobe")
 SYSTEM_FILE_SAVE_PATHS_ENABLED = bool(str(os.environ.get("AIC_USER_DIR", "") or "").strip())
 
+CAM_OUTPUT_BASE_DIR = _get_path_env("AIC_CAM_OUTPUT_DIR", r"C:\cam-output")
+
 USER_DIR       = DEFAULT_USER_DIR
 CANVAS_DIR     = DEFAULT_CANVAS_DIR
 DATA_DIR       = DEFAULT_DATA_DIR
@@ -234,6 +237,13 @@ CONFIG_FILE    = os.path.join(USER_DIR, "config.json")
 SETTINGS_FILE  = os.path.join(USER_DIR, "settings.json")
 GEN_SEQ_STATE_FILE = os.path.join(OUTPUT_DIR, ".gen_seq_state.json")
 MAX_UPLOAD_BYTES = _get_int_env("AIC_UPLOAD_MAX_BYTES", 100 * 1024 * 1024, 1)
+
+CANVAS_PATH_MANAGER = CanvasPathManager(
+    base_dir=CAM_OUTPUT_BASE_DIR,
+    legacy_canvas_dir=DEFAULT_CANVAS_DIR,
+    legacy_output_dir=DEFAULT_OUTPUT_DIR,
+    legacy_uploads_dir=DEFAULT_UPLOADS_DIR,
+)
 IMAGE_DERIVATIVE_DISPLAY_MAX_EDGE = 1280
 IMAGE_DERIVATIVE_THUMB_MAX_EDGE = 320
 IMAGE_DERIVATIVE_DISPLAY_QUALITY = 78
@@ -1076,6 +1086,7 @@ JSON_FILE_ROUTE_SERVICE = JsonFileRouteService(
     atomic_write_json=lambda path, data: _atomic_write_json(path, data),
     output_dir_getter=lambda: OUTPUT_DIR,
     uploads_dir_getter=lambda: UPLOADS_DIR,
+    canvas_path_manager=lambda: CANVAS_PATH_MANAGER,
 )
 LIBRARY_FILE_ROUTE_SERVICE = LibraryFileRouteService(
     user_dir_getter=lambda: USER_DIR,
@@ -1328,11 +1339,12 @@ MEDIA_FILE_ROUTE_SERVICE = MediaFileRouteService(
     image_derivative_display_quality=IMAGE_DERIVATIVE_DISPLAY_QUALITY,
     image_derivative_thumb_quality=IMAGE_DERIVATIVE_THUMB_QUALITY,
     image_derivative_root_dirname=IMAGE_DERIVATIVE_ROOT_DIRNAME,
+    canvas_path_manager_getter=lambda: CANVAS_PATH_MANAGER,
 )
 
 
 LOCAL_MEDIA_PROCESSING_ROUTE_SERVICE = LocalMediaProcessingRouteService(
-    output_dir_getter=lambda: OUTPUT_DIR,
+    output_dir_getter=lambda: _get_active_canvas_output_dir(),
     resolve_local_virtual_path=lambda src_path: _resolve_local_virtual_path(src_path),
     read_body=_read_body,
     ffmpeg_getter=lambda: FFMPEG_EXE,
@@ -1943,6 +1955,24 @@ def _next_gen_output_filename(ext):
     return f"gen_{date_str}_{seq}.{ext}"
 
 
+def _get_active_canvas_output_dir():
+    active = CANVAS_PATH_MANAGER.get_active_canvas()
+    if active:
+        canvas_output = CANVAS_PATH_MANAGER.get_canvas_output_dir(active)
+        if os.path.isdir(canvas_output):
+            return canvas_output
+    return OUTPUT_DIR
+
+
+def _get_active_canvas_uploads_dir():
+    active = CANVAS_PATH_MANAGER.get_active_canvas()
+    if active:
+        canvas_uploads = CANVAS_PATH_MANAGER.get_canvas_uploads_dir(active)
+        if os.path.isdir(canvas_uploads):
+            return canvas_uploads
+    return UPLOADS_DIR
+
+
 def _normalize_posix_rel_path(path_value):
     return MediaFileRouteService._normalize_posix_rel_path(path_value)
 
@@ -1969,7 +1999,94 @@ def _augment_saved_media_response(payload, abs_path, local_path):
 
 
 def _resolve_local_virtual_path(src_path):
+    canvas_path = CANVAS_PATH_MANAGER.resolve_canvas_virtual_path(src_path)
+    if canvas_path:
+        return canvas_path
     return MEDIA_FILE_ROUTE_SERVICE.resolve_local_virtual_path(src_path)
+
+
+def _handle_canvas_paths_api_get(handler, path):
+    if path == "/api/v2/canvas-paths/validate":
+        result = CANVAS_PATH_MANAGER.validate_storage_structure()
+        _json_ok(handler, result)
+        return True
+    if path == "/api/v2/canvas-paths/list":
+        projects = CANVAS_PATH_MANAGER.list_canvas_projects()
+        _json_ok(handler, {"success": True, "projects": projects})
+        return True
+    if path == "/api/v2/canvas-paths/external-projects":
+        external = CANVAS_PATH_MANAGER.scan_for_external_projects()
+        _json_ok(handler, {"success": True, "externalProjects": external})
+        return True
+    if path.startswith("/api/v2/canvas-paths/info/"):
+        canvas_name = path[len("/api/v2/canvas-paths/info/"):]
+        canvas_name = urllib.parse.unquote(canvas_name)
+        info = CANVAS_PATH_MANAGER.get_canvas_info(canvas_name)
+        if info:
+            _json_ok(handler, {"success": True, "info": info})
+        else:
+            _json_err(handler, 404, f"画布 '{canvas_name}' 不存在")
+        return True
+    return False
+
+
+def _handle_canvas_paths_api_post(handler, path):
+    if path == "/api/v2/canvas-paths/set-active":
+        body = _read_body(handler)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            _json_err(handler, 400, "Invalid JSON")
+            return True
+        canvas_name = str(data.get("canvasName", "")).strip()
+        if not canvas_name:
+            _json_err(handler, 400, "canvasName is required")
+            return True
+        CANVAS_PATH_MANAGER.set_active_canvas(canvas_name)
+        errors = CANVAS_PATH_MANAGER.ensure_canvas_dir(canvas_name)
+        _json_ok(handler, {"success": True, "canvasName": canvas_name, "errors": errors})
+        return True
+    if path == "/api/v2/canvas-paths/repair":
+        repairs = CANVAS_PATH_MANAGER.repair_storage_structure()
+        _json_ok(handler, {"success": True, "repairs": repairs})
+        return True
+    if path == "/api/v2/canvas-paths/migrate-all":
+        results = CANVAS_PATH_MANAGER.migrate_all_legacy_projects(CANVAS_DIR)
+        _json_ok(handler, {"success": True, "results": results})
+        return True
+    if path == "/api/v2/canvas-paths/migrate":
+        body = _read_body(handler)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            _json_err(handler, 400, "Invalid JSON")
+            return True
+        project_name = str(data.get("projectName", "")).strip()
+        if not project_name:
+            _json_err(handler, 400, "projectName is required")
+            return True
+        legacy_json = os.path.join(CANVAS_DIR, project_name + ".json")
+        if not os.path.isfile(legacy_json):
+            _json_err(handler, 404, f"Legacy project file not found: {legacy_json}")
+            return True
+        result = CANVAS_PATH_MANAGER.migrate_legacy_project(project_name, legacy_json)
+        _json_ok(handler, result)
+        return True
+    if path == "/api/v2/canvas-paths/adopt-directory":
+        body = _read_body(handler)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            _json_err(handler, 400, "Invalid JSON")
+            return True
+        dir_path = str(data.get("dirPath", "")).strip()
+        if not dir_path:
+            _json_err(handler, 400, "dirPath is required")
+            return True
+        result = CANVAS_PATH_MANAGER.adopt_existing_directory(dir_path)
+        _json_ok(handler, result)
+        return True
+    return False
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -1984,6 +2101,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             ("/user/prompt/_thumbs/", os.path.join(USER_DIR, "prompt", "_thumbs")),
             ("/data/workflows/", WORKFLOWS_DIR),
         )
+        canvas_path = CANVAS_PATH_MANAGER.resolve_canvas_virtual_path(decoded_path)
+        if canvas_path:
+            return canvas_path
         media_path = _resolve_local_virtual_path(decoded_path)
         if media_path:
             return media_path
@@ -2139,6 +2259,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not _enforce_local_api_access(self, path):
             return
 
+        if _handle_canvas_paths_api_get(self, path):
+            return
+
         if HTTP_ROUTE_DISPATCHER.handle_get(self, path):
             return
 
@@ -2171,6 +2294,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
         if not _enforce_local_api_access(self, path):
+            return
+
+        if _handle_canvas_paths_api_post(self, path):
             return
 
         if HTTP_ROUTE_DISPATCHER.handle_post(self, path):
@@ -3014,6 +3140,32 @@ def _display_urls(bind_host, port):
 
 # --- 启动 ---
 if __name__ == "__main__":
+    _cam_validation = CANVAS_PATH_MANAGER.validate_storage_structure()
+    if not _cam_validation["valid"]:
+        print("[cam-output] 存储结构验证发现问题:")
+        for issue in _cam_validation.get("issues", []):
+            print(f"  - {issue.get('message', issue)}")
+        _cam_repairs = CANVAS_PATH_MANAGER.repair_storage_structure()
+        for repair in _cam_repairs:
+            status = "成功" if repair.get("success") else "失败"
+            print(f"  [修复] {repair.get('action', 'unknown')}: {status}")
+    _cam_migrate_results = CANVAS_PATH_MANAGER.migrate_all_legacy_projects(CANVAS_DIR)
+    if _cam_migrate_results:
+        print(f"[cam-output] 迁移了 {len(_cam_migrate_results)} 个画布项目")
+        for result in _cam_migrate_results:
+            status = result.get("status", "unknown")
+            name = result.get("name", "unknown")
+            if status == "failed":
+                errors = result.get("errors", [])
+                print(f"  - {name}: {status} (errors: {errors})")
+            else:
+                print(f"  - {name}: {status}")
+    _cam_external = CANVAS_PATH_MANAGER.scan_for_external_projects()
+    if _cam_external:
+        print(f"[cam-output] 检测到 {len(_cam_external)} 个外部项目目录")
+        for ext_proj in _cam_external:
+            print(f"  - {ext_proj.get('name', 'unknown')}: {ext_proj.get('message', '')}")
+
     # 后台启动自动更新检查
     _t = threading.Thread(target=UPDATE_SERVICE.update_check_loop, daemon=True, name='AutoUpdateChecker')
     _t.start()

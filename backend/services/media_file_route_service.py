@@ -42,6 +42,7 @@ class MediaFileRouteService:
         image_derivative_display_quality=78,
         image_derivative_thumb_quality=70,
         image_derivative_root_dirname="_derived",
+        canvas_path_manager_getter=None,
     ):
         self.directory = os.path.abspath(directory)
         self._get_uploads_dir = uploads_dir_getter
@@ -61,6 +62,34 @@ class MediaFileRouteService:
         self.image_derivative_root_dirname = str(image_derivative_root_dirname or "_derived")
         self._save_output_from_url_lock = threading.Lock()
         self._save_output_from_url_inflight = {}
+        self._canvas_path_manager_getter = canvas_path_manager_getter
+
+    @property
+    def _canvas_path_manager(self):
+        if self._canvas_path_manager_getter:
+            mgr = self._canvas_path_manager_getter()
+            return mgr
+        return None
+
+    def _get_active_canvas_output_dir(self):
+        mgr = self._canvas_path_manager
+        if mgr:
+            active = mgr.get_active_canvas()
+            if active:
+                canvas_output = mgr.get_canvas_output_dir(active)
+                if os.path.isdir(canvas_output):
+                    return canvas_output
+        return self._output_dir()
+
+    def _get_active_canvas_uploads_dir(self):
+        mgr = self._canvas_path_manager
+        if mgr:
+            active = mgr.get_active_canvas()
+            if active:
+                canvas_uploads = mgr.get_canvas_uploads_dir(active)
+                if os.path.isdir(canvas_uploads):
+                    return canvas_uploads
+        return self._uploads_dir()
 
     @staticmethod
     def _json_ok(data):
@@ -118,6 +147,8 @@ class MediaFileRouteService:
         if normalized.startswith("data/uploads/"):
             return normalized
         if normalized.startswith("data/assets/"):
+            return normalized
+        if normalized.startswith("cam-output/"):
             return normalized
         return ""
 
@@ -272,6 +303,24 @@ class MediaFileRouteService:
 
     def resolve_virtual_media_root(self, local_path=None, abs_path=None):
         norm_local = self.normalize_virtual_local_path(local_path)
+        mgr = self._canvas_path_manager
+        if mgr and norm_local.startswith(mgr.CAM_OUTPUT_VIRTUAL_PREFIX + "/"):
+            canvas_path = mgr.resolve_canvas_virtual_path(norm_local)
+            if canvas_path:
+                active_canvas = mgr.get_active_canvas()
+                if active_canvas:
+                    canvas_dir = mgr.get_canvas_dir(active_canvas)
+                    output_dir = mgr.get_canvas_output_dir(active_canvas)
+                    uploads_dir = mgr.get_canvas_uploads_dir(active_canvas)
+                    if self._is_path_inside(canvas_path, output_dir):
+                        rel = os.path.relpath(canvas_path, output_dir).replace("\\", "/")
+                        return output_dir, f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/output", rel
+                    if self._is_path_inside(canvas_path, uploads_dir):
+                        rel = os.path.relpath(canvas_path, uploads_dir).replace("\\", "/")
+                        return uploads_dir, f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/uploads", rel
+                    if self._is_path_inside(canvas_path, canvas_dir):
+                        rel = os.path.relpath(canvas_path, canvas_dir).replace("\\", "/")
+                        return canvas_dir, f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}", rel
         if norm_local.startswith("output/"):
             rel = norm_local[len("output/") :].lstrip("/")
             return self._output_dir(), "output", rel
@@ -298,6 +347,13 @@ class MediaFileRouteService:
         norm_slash = self.normalize_virtual_local_path(src_path)
         if not norm_slash:
             return None
+        mgr = self._canvas_path_manager
+        if mgr:
+            cam_prefix = mgr.CAM_OUTPUT_VIRTUAL_PREFIX + "/"
+            if norm_slash.startswith(cam_prefix):
+                canvas_path = mgr.resolve_canvas_virtual_path(norm_slash)
+                if canvas_path:
+                    return canvas_path
         if norm_slash.startswith("output/"):
             rel = norm_slash[len("output/") :].lstrip("/")
             path = os.path.abspath(os.path.join(self._output_dir(), *rel.split("/")))
@@ -510,7 +566,7 @@ class MediaFileRouteService:
             if len(file_bytes) > self.max_upload_bytes:
                 return self._json_err(413, "Upload file too large")
 
-            upload_dir = self._uploads_dir()
+            upload_dir = self._get_active_canvas_uploads_dir()
             os.makedirs(upload_dir, exist_ok=True)
             safe_fn, stored_fn, fpath = self._write_unique_upload_file(
                 upload_dir,
@@ -518,7 +574,12 @@ class MediaFileRouteService:
                 file_bytes,
             )
 
-            local_path = f"data/uploads/{stored_fn}"
+            mgr = self._canvas_path_manager
+            active_canvas = mgr.get_active_canvas() if mgr else ""
+            if active_canvas and mgr:
+                local_path = f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/uploads/{stored_fn}"
+            else:
+                local_path = f"data/uploads/{stored_fn}"
             return self._json_ok(
                 self.augment_saved_media_response(
                     {
@@ -579,16 +640,27 @@ class MediaFileRouteService:
             kind = (qs.get("kind", [""])[0] or "").strip()
             if kind and not re.match(r"^[a-zA-Z0-9_-]+$", kind):
                 kind = ""
+
+            active_output_dir = self._get_active_canvas_output_dir()
+            mgr = self._canvas_path_manager
+            active_canvas = mgr.get_active_canvas() if mgr else ""
+
             if sub_dir and re.match(r"^[a-zA-Z0-9 _-]+$", sub_dir):
-                target_dir = os.path.join(self._output_dir(), sub_dir)
+                target_dir = os.path.join(active_output_dir, sub_dir)
                 os.makedirs(target_dir, exist_ok=True)
                 filename = self._next_output_filename(ext)
                 fpath = os.path.join(target_dir, filename)
-                rel_path = f"output/{sub_dir}/{filename}"
+                if active_canvas and mgr:
+                    rel_path = f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/output/{sub_dir}/{filename}"
+                else:
+                    rel_path = f"output/{sub_dir}/{filename}"
             else:
                 filename = self._next_output_filename(ext)
-                fpath = os.path.join(self._output_dir(), filename)
-                rel_path = f"output/{filename}"
+                fpath = os.path.join(active_output_dir, filename)
+                if active_canvas and mgr:
+                    rel_path = f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/output/{filename}"
+                else:
+                    rel_path = f"output/{filename}"
 
             body = self._read_body(handler)
             if not body:
@@ -599,7 +671,7 @@ class MediaFileRouteService:
                 file.write(body)
 
             if kind:
-                meta_file = os.path.join(self._output_dir(), ".output_meta.json")
+                meta_file = os.path.join(active_output_dir, ".output_meta.json")
                 meta = self._load_json_file(meta_file)
                 if not isinstance(meta, dict):
                     meta = {}
@@ -762,7 +834,8 @@ class MediaFileRouteService:
                     if not ext:
                         ext = self._extension_from_content_type(content_type)
                     filename = self._next_output_filename(ext)
-                    fpath = os.path.join(self._output_dir(), filename)
+                    active_output_dir = self._get_active_canvas_output_dir()
+                    fpath = os.path.join(active_output_dir, filename)
                     total = 0
                     os.makedirs(os.path.dirname(fpath), exist_ok=True)
                     with open(fpath, "wb") as file:
@@ -783,7 +856,12 @@ class MediaFileRouteService:
             except Exception as exc:
                 return self._json_err(502, f"Download failed: {str(exc)}")
 
-            rel_path = f"output/{filename}"
+            mgr = self._canvas_path_manager
+            active_canvas = mgr.get_active_canvas() if mgr else ""
+            if active_canvas and mgr:
+                rel_path = f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/output/{filename}"
+            else:
+                rel_path = f"output/{filename}"
             self._remember_saved_output_from_url(dedupe_hash, rel_path, url)
             return self._json_ok(
                 self.augment_saved_media_response(
