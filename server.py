@@ -2126,10 +2126,13 @@ def _handle_canvas_paths_api_post(handler, path):
 
 class Handler(http.server.SimpleHTTPRequestHandler):
 
+    protocol_version = 'HTTP/1.1'
+
     _request_semaphore = threading.Semaphore(100)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
+        self.close_connection = False
 
     def handle(self):
         acquired = Handler._request_semaphore.acquire(blocking=True, timeout=30)
