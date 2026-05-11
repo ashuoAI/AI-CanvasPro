@@ -5,7 +5,7 @@ module.exports = {
       script: 'server.py',
       interpreter: 'python',
       interpreter_args: '-u',
-      cwd: __dirname,
+      cwd: 'C:\\wwwroot\\expo-AI-CanvasPro',
       instances: 1,
       exec_mode: 'fork',
       max_memory_restart: '512M',
