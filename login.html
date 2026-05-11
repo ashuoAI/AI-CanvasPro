@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI CanvasPro - 登录</title>
+<style>
+  :root {
+    --bg: #080809;
+    --bg-card: rgba(22, 22, 28, 0.98);
+    --bg-input: rgba(255, 255, 255, 0.06);
+    --text-1: #ffffff;
+    --text-2: rgba(255, 255, 255, 0.6);
+    --text-3: rgba(255, 255, 255, 0.28);
+    --indigo: #6366f1;
+    --purple: #a855f7;
+    --red: #ef4444;
+    --green: #22c55e;
+    --white-10: rgba(255, 255, 255, 0.1);
+    --white-15: rgba(255, 255, 255, 0.15);
+    --white-20: rgba(255, 255, 255, 0.2);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text-1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .bg-gradient {
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 80%, rgba(168, 85, 247, 0.06) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .login-container {
+    position: relative;
+    z-index: 1;
+    width: 400px;
+    max-width: 90vw;
+  }
+
+  .login-header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .login-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .login-logo svg { width: 36px; height: 36px; }
+
+  .login-logo span {
+    font-size: 22px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--indigo), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .login-subtitle {
+    font-size: 14px;
+    color: var(--text-2);
+  }
+
+  .login-card {
+    background: var(--bg-card);
+    border: 1px solid var(--white-10);
+    border-radius: 16px;
+    padding: 32px;
+    backdrop-filter: blur(20px);
+  }
+
+  .form-group {
+    margin-bottom: 20px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-2);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--white-15);
+    border-radius: 10px;
+    color: var(--text-1);
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .form-group input:focus {
+    border-color: var(--indigo);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  }
+
+  .form-group input::placeholder {
+    color: var(--text-3);
+  }
+
+  .btn-login {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, var(--indigo), var(--purple));
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    margin-top: 4px;
+  }
+
+  .btn-login:hover { opacity: 0.9; }
+  .btn-login:active { transform: scale(0.98); }
+  .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .error-msg {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--red);
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: none;
+  }
+
+  .error-msg.show { display: block; }
+
+  .success-msg {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--green);
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: none;
+  }
+
+  .success-msg.show { display: block; }
+
+  .login-footer {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+
+  .login-footer a {
+    color: var(--indigo);
+    text-decoration: none;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .jump-info {
+    text-align: center;
+    margin-top: 24px;
+    padding: 14px;
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px solid rgba(99, 102, 241, 0.12);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--text-2);
+    line-height: 1.6;
+  }
+
+  .jump-info strong { color: var(--indigo); }
+</style>
+</head>
+<body>
+
+<div class="bg-gradient"></div>
+
+<div class="login-container">
+  <div class="login-header">
+    <div class="login-logo">
+      <svg width="36" height="36" viewBox="0 0 26 26" fill="none">
+        <circle cx="13" cy="13" r="12" fill="url(#logoGrad)"/>
+        <path d="M9 13c0-2.21 1.79-4 4-4s4 1.79 4 4-1.79 4-4 4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="13" cy="13" r="1.8" fill="white"/>
+        <defs>
+          <linearGradient id="logoGrad" x1="0" y1="0" x2="26" y2="26">
+            <stop offset="0%" stop-color="var(--indigo)"/>
+            <stop offset="100%" stop-color="var(--purple)"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span>AI CanvasPro</span>
+    </div>
+    <p class="login-subtitle">登录以访问您的 AI 画布项目</p>
+  </div>
+
+  <div class="login-card">
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="success-msg" id="successMsg"></div>
+
+    <form id="loginForm" autocomplete="off">
+      <div class="form-group">
+        <label for="username">用户名</label>
+        <input type="text" id="username" placeholder="请输入用户名" required autofocus>
+      </div>
+      <div class="form-group">
+        <label for="password">密码</label>
+        <input type="password" id="password" placeholder="请输入密码" required>
+      </div>
+      <button type="submit" class="btn-login" id="btnLogin">
+        <span id="btnText">登 录</span>
+      </button>
+    </form>
+  </div>
+
+  <div class="jump-info" id="jumpInfo" style="display:none;">
+    正在验证登录状态<span id="jumpDots">...</span>
+  </div>
+
+  <div class="login-footer">
+    由 <strong>设计管理系统</strong> 统一认证 &nbsp;|&nbsp;
+    <a href="/">返回首页</a>
+  </div>
+</div>
+
+<script>
+(function() {
+  var API_BASE = window.location.origin;
+
+  var $ = function(id) { return document.getElementById(id); };
+
+  var errorMsg = $('errorMsg');
+  var successMsg = $('successMsg');
+  var loginForm = $('loginForm');
+  var btnLogin = $('btnLogin');
+  var btnText = $('btnText');
+  var jumpInfo = $('jumpInfo');
+  var jumpDots = $('jumpDots');
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.classList.add('show');
+    successMsg.classList.remove('show');
+  }
+
+  function showSuccess(msg) {
+    successMsg.textContent = msg;
+    successMsg.classList.add('show');
+    errorMsg.classList.remove('show');
+  }
+
+  function hideMessages() {
+    errorMsg.classList.remove('show');
+    successMsg.classList.remove('show');
+  }
+
+  function setLoading(loading) {
+    btnLogin.disabled = loading;
+    if (loading) {
+      btnText.innerHTML = '<span class="spinner"></span>登录中...';
+    } else {
+      btnText.textContent = '登 录';
+    }
+  }
+
+  function saveToken(token, user) {
+    try {
+      var session = {
+        token: token,
+        user: user,
+        loginAt: Date.now()
+      };
+      sessionStorage.setItem('aic_session', JSON.stringify(session));
+    } catch(e) {}
+  }
+
+  function redirectToApp(token) {
+    var target = '/index.html';
+    if (token) {
+      target += '?jwt=' + encodeURIComponent(token);
+    }
+    window.location.href = target;
+  }
+
+  function handleLogin(username, password) {
+    hideMessages();
+    setLoading(true);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', API_BASE + '/api/v2/db/auth/login', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 15000;
+
+    xhr.onload = function() {
+      setLoading(false);
+      try {
+        var resp = JSON.parse(xhr.responseText);
+        if (xhr.status === 200 && resp.success) {
+          saveToken(resp.token, resp.user);
+          showSuccess('登录成功，正在跳转...');
+          setTimeout(function() {
+            redirectToApp(resp.token);
+          }, 600);
+        } else {
+          showError(resp.message || '用户名或密码错误');
+        }
+      } catch(e) {
+        showError('服务器响应异常，请稍后重试');
+      }
+    };
+
+    xhr.onerror = function() {
+      setLoading(false);
+      showError('无法连接到服务器，请检查网络');
+    };
+
+    xhr.ontimeout = function() {
+      setLoading(false);
+      showError('请求超时，请稍后重试');
+    };
+
+    xhr.send(JSON.stringify({
+      username: username,
+      password: password
+    }));
+  }
+
+  function handleJwtFromUrl() {
+    var params = new URLSearchParams(window.location.search);
+    var jwt = params.get('jwt') || params.get('token') || params.get('auth_token');
+    if (!jwt) return false;
+
+    jumpInfo.style.display = 'block';
+
+    var dotsTimer = setInterval(function() {
+      var dots = jumpDots.textContent || '';
+      jumpDots.textContent = dots.length >= 3 ? '' : dots + '.';
+    }, 400);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', API_BASE + '/api/v2/db/auth/validate?jwt=' + encodeURIComponent(jwt), true);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + jwt);
+    xhr.timeout = 10000;
+
+    xhr.onload = function() {
+      clearInterval(dotsTimer);
+      try {
+        var resp = JSON.parse(xhr.responseText);
+        if (xhr.status === 200 && resp.success && resp.valid) {
+          saveToken(jwt, resp.user);
+          jumpDots.textContent = '验证通过，正在进入...';
+          setTimeout(function() {
+            redirectToApp(jwt);
+          }, 500);
+        } else {
+          jumpInfo.innerHTML = '<span style="color:var(--red);">验证失败，请重新登录</span>';
+        }
+      } catch(e) {
+        jumpInfo.innerHTML = '<span style="color:var(--red);">验证异常，请手动登录</span>';
+      }
+    };
+
+    xhr.onerror = function() {
+      clearInterval(dotsTimer);
+      jumpInfo.innerHTML = '<span style="color:var(--red);">无法连接服务器</span>';
+    };
+
+    xhr.send();
+    return true;
+  }
+
+  loginForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var username = $('username').value.trim();
+    var password = $('password').value.trim();
+
+    if (!username) { showError('请输入用户名'); return; }
+    if (!password) { showError('请输入密码'); return; }
+
+    handleLogin(username, password);
+  });
+
+  if (!handleJwtFromUrl()) {
+    jumpInfo.style.display = 'none';
+  }
+})();
+</script>
+
+</body>
+</html>

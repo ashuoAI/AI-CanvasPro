@@ -56,6 +56,7 @@ from backend.services.subscription_client import SubscriptionRemoteClient
 from backend.services.dreamina_cli_service import DreaminaCliService
 from backend.services.dreamina_route_service import DreaminaRouteService
 from backend.services.canvas_path_manager import CanvasPathManager
+from backend.services.db_route_service import DatabaseRouteService
 
 mimetypes.add_type("text/javascript; charset=utf-8", ".js")
 mimetypes.add_type("text/javascript; charset=utf-8", ".mjs")
@@ -1168,6 +1169,7 @@ _SENSITIVE_API_PREFIXES = (
     "/api/v2/assets",
     "/api/v2/chat",
     "/api/v2/config",
+    "/api/v2/db",
     "/api/v2/dreamina",
     "/api/v2/grid_tiles",
     "/api/v2/images/derivatives",
@@ -1415,6 +1417,8 @@ HTTP_ROUTE_DISPATCHER = HttpRouteDispatcher(
     send_route_response=_send_route_response,
     read_body=_read_body,
 )
+
+DATABASE_ROUTE_SERVICE = DatabaseRouteService()
 
 
 def _run_smart_clip_job(job_id, local_src, options):
@@ -2253,6 +2257,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if HTTP_ROUTE_DISPATCHER.handle_delete(self, path):
             return
 
+        if path.startswith("/api/v2/db/"):
+            db_delete_response = DATABASE_ROUTE_SERVICE.handle_delete(self, path)
+            if db_delete_response is not None:
+                _send_route_response(self, db_delete_response)
+                return
+
         _json_err(self, 400, "Invalid request")
 
     # ════════════════════════════════════════════════════
@@ -2275,10 +2285,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not _enforce_local_api_access(self, path):
             return
 
+        if path in ("/", "/index.html", "/index.htm"):
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(self.path)
+            qs = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=20)
+            has_token = bool(
+                (qs.get("jwt") or [""])[0].strip()
+                or (qs.get("token") or [""])[0].strip()
+                or (qs.get("auth_token") or [""])[0].strip()
+            )
+            if not has_token:
+                self.send_response(302)
+                self.send_header("Location", "/login.html")
+                self.end_headers()
+                return
+
         if _handle_canvas_paths_api_get(self, path):
             return
 
         if HTTP_ROUTE_DISPATCHER.handle_get(self, path):
+            return
+
+        db_get_response = DATABASE_ROUTE_SERVICE.handle_get(self, path)
+        if db_get_response is not None:
+            _send_route_response(self, db_get_response)
             return
 
         # --- 其余静态资源交给 SimpleHTTPRequestHandler 处理 ---
@@ -2317,6 +2347,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if HTTP_ROUTE_DISPATCHER.handle_post(self, path):
             return
+
+        if path.startswith("/api/v2/db/"):
+            body = _read_body(self)
+            db_post_response = DATABASE_ROUTE_SERVICE.handle_post(self, path, body)
+            if db_post_response is not None:
+                _send_route_response(self, db_post_response)
+                return
 
         if path == "/api/v2/proxy/apimart-upload":
             try:
