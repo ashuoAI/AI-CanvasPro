@@ -1188,8 +1188,16 @@ _SENSITIVE_API_PREFIXES = (
 )
 
 
+_PUBLIC_API_PATHS = frozenset({
+    "/api/v2/db/auth/login",
+    "/api/v2/db/health",
+})
+
+
 def _is_sensitive_api_path(path):
     clean_path = str(path or "").split("?", 1)[0].rstrip("/") or "/"
+    if clean_path in _PUBLIC_API_PATHS:
+        return False
     return any(
         clean_path == prefix or clean_path.startswith(prefix + "/")
         for prefix in _SENSITIVE_API_PREFIXES
@@ -2240,6 +2248,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not _enforce_local_api_access(self, path):
             return
         self.send_response(204)
+        _send_cors_origin_header(self)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, PATCH, OPTIONS")
         self.send_header(
             "Access-Control-Allow-Headers",
