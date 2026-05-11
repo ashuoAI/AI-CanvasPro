@@ -1008,7 +1008,14 @@ os.makedirs(WORKFLOWS_DIR, exist_ok=True)
 os.makedirs(WORKFLOW_THUMBS_DIR, exist_ok=True)
 
 
-def _read_user_settings():
+SHARED_SETTING_KEYS = {"fileSavePaths", "installId"}
+
+
+def _get_user_settings_file(user_id):
+    return os.path.join(USER_DIR, f"settings_{user_id}.json")
+
+
+def _read_user_settings(user_id=None):
     local_settings = _read_json_file(SETTINGS_FILE, {})
     system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
 
@@ -1021,7 +1028,6 @@ def _read_user_settings():
     )
     system_file_save_paths = _read_system_file_save_paths()
 
-    # 兼容旧版本：首次读到仓库内 settings.json 的 installId 时自动迁移到系统目录。
     if not system_install_id and local_install_id:
         system_settings = dict(system_settings)
         system_settings["installId"] = local_install_id
@@ -1031,7 +1037,12 @@ def _read_user_settings():
             pass
         system_install_id = local_install_id
 
-    merged = dict(local_settings)
+    if user_id:
+        user_settings = _read_json_file(_get_user_settings_file(user_id), {})
+        merged = dict(user_settings)
+    else:
+        merged = dict(local_settings)
+
     if system_install_id:
         merged["installId"] = system_install_id
     if local_file_save_paths:
@@ -1045,14 +1056,23 @@ def _read_user_settings():
     return merged
 
 
-def _write_user_settings(data, migrate=True):
+def _write_user_settings(data, migrate=True, user_id=None):
     payload = dict(data) if isinstance(data, dict) else {}
+
     if isinstance(payload.get("fileSavePaths"), dict):
         applied_paths = _apply_file_save_paths(payload["fileSavePaths"], migrate=bool(migrate))
         payload["fileSavePaths"] = applied_paths
     elif "fileSavePaths" not in payload:
         payload["fileSavePaths"] = _current_file_save_paths()
-    _write_json_file(SETTINGS_FILE, payload)
+
+    if user_id:
+        user_payload = {k: v for k, v in payload.items() if k not in SHARED_SETTING_KEYS}
+        _write_json_file(_get_user_settings_file(user_id), user_payload)
+
+        shared_payload = {k: v for k, v in payload.items() if k in SHARED_SETTING_KEYS}
+        _write_json_file(SETTINGS_FILE, shared_payload)
+    else:
+        _write_json_file(SETTINGS_FILE, payload)
 
     install_id = str(payload.get("installId") or "").strip()
     system_settings = _read_json_file(SYSTEM_SETTINGS_FILE, {})
@@ -1061,6 +1081,22 @@ def _write_user_settings(data, migrate=True):
         next_system_settings["installId"] = install_id
     next_system_settings.pop("fileSavePaths", None)
     _write_json_file(SYSTEM_SETTINGS_FILE, next_system_settings)
+
+def _extract_user_id_from_request(handler):
+    try:
+        token = DATABASE_ROUTE_SERVICE._auth.extract_token_from_request(handler)
+        if not token:
+            return None
+        user = DATABASE_ROUTE_SERVICE._auth.validate_jwt(token)
+        if user:
+            return user.get("user_id")
+        user = DATABASE_ROUTE_SERVICE._auth.validate_token(token)
+        if user:
+            return user.get("user_id")
+    except Exception:
+        pass
+    return None
+
 
 def _is_dev_build():
     return os.path.exists(os.path.join(DIRECTORY, ".dev"))
@@ -1088,6 +1124,7 @@ JSON_FILE_ROUTE_SERVICE = JsonFileRouteService(
     output_dir_getter=lambda: OUTPUT_DIR,
     uploads_dir_getter=lambda: UPLOADS_DIR,
     canvas_path_manager=lambda: CANVAS_PATH_MANAGER,
+    extract_user_id=_extract_user_id_from_request,
 )
 LIBRARY_FILE_ROUTE_SERVICE = LibraryFileRouteService(
     user_dir_getter=lambda: USER_DIR,

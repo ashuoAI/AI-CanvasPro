@@ -22,6 +22,7 @@ class JsonFileRouteService:
         output_dir_getter=None,
         uploads_dir_getter=None,
         canvas_path_manager=None,
+        extract_user_id=None,
     ):
         self._get_canvas_dir = canvas_dir_getter
         self._get_assets_dir = assets_dir_getter
@@ -35,6 +36,7 @@ class JsonFileRouteService:
         self._get_output_dir = output_dir_getter
         self._get_uploads_dir = uploads_dir_getter
         self._canvas_path_manager_getter = canvas_path_manager
+        self._extract_user_id = extract_user_id
 
     @property
     def _canvas_path_manager(self):
@@ -314,12 +316,15 @@ class JsonFileRouteService:
             "hasMore": has_more,
         }
 
-    def _load_user_json(self, path):
+    def _load_user_json(self, path, handler=None):
         filename = path[len("/api/v2/user/") :]
         if not self._safe_json_filename(filename):
             return None
         if filename == "settings.json":
-            return self._json_ok(self._read_user_settings())
+            user_id = None
+            if self._extract_user_id and handler is not None:
+                user_id = self._extract_user_id(handler)
+            return self._json_ok(self._read_user_settings(user_id=user_id))
         file_path = os.path.join(self._get_user_dir(), filename)
         if os.path.exists(file_path):
             with open(file_path, "r", encoding="utf-8-sig") as file:
@@ -378,7 +383,7 @@ class JsonFileRouteService:
         self._write_json_file(os.path.join(self._get_workflows_dir(), filename), data)
         return self._json_ok({"success": True, "id": workflow_id})
 
-    def _save_user_json(self, path, body):
+    def _save_user_json(self, path, body, handler=None):
         filename = path[len("/api/v2/user/") :]
         if not self._safe_json_filename(filename):
             return self._json_err(400, "Invalid filename")
@@ -386,14 +391,17 @@ class JsonFileRouteService:
         if error is not None:
             return error
         if filename == "settings.json":
+            user_id = None
+            if self._extract_user_id and handler is not None:
+                user_id = self._extract_user_id(handler)
             try:
-                self._write_user_settings(data)
+                self._write_user_settings(data, user_id=user_id)
             except ValueError as exc:
                 return self._json_err(400, str(exc))
             return self._json_ok(
                 {
                     "success": True,
-                    "settings": self._read_user_settings(),
+                    "settings": self._read_user_settings(user_id=user_id),
                 }
             )
         self._write_json_file(os.path.join(self._get_user_dir(), filename), data)
@@ -508,7 +516,7 @@ class JsonFileRouteService:
             return self._load_file_save_migration_status(handler)
 
         if path.startswith("/api/v2/user/") and not path.startswith("/api/v2/user/presets"):
-            return self._load_user_json(path)
+            return self._load_user_json(path, handler=handler)
 
         return None
 
@@ -526,7 +534,7 @@ class JsonFileRouteService:
             return self._start_file_save_migration_job(body)
 
         if path.startswith("/api/v2/user/"):
-            return self._save_user_json(path, body)
+            return self._save_user_json(path, body, handler=handler)
 
         return None
 
