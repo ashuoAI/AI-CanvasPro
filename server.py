@@ -1189,6 +1189,7 @@ _SENSITIVE_API_PREFIXES = (
 
 
 _PUBLIC_API_PATHS = frozenset({
+    "/api/config",
     "/api/v2/db/auth/login",
     "/api/v2/db/health",
 })
