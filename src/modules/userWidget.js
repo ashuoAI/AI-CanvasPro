@@ -3,6 +3,27 @@ import { getCurrentUser } from './settings/roleGuard.js';
 const LOGIN_PAGE_URL = '/login.html';
 const SESSION_KEY = 'aic_session';
 
+function redirectToLogin() {
+  const returnUrl = encodeURIComponent(window.location.href);
+  window.location.href = LOGIN_PAGE_URL + '?redirect=' + returnUrl;
+}
+
+(function authGuard() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      const user = getCurrentUser();
+      if (!user) {
+        redirectToLogin();
+      }
+    });
+  } else {
+    const user = getCurrentUser();
+    if (!user) {
+      redirectToLogin();
+    }
+  }
+})();
+
 function updateUI() {
   const loggedOutEl = document.getElementById('userWidgetLoggedOut');
   const loggedInEl = document.getElementById('userWidgetLoggedIn');
@@ -37,15 +58,13 @@ function updateUI() {
 }
 
 function handleLogin() {
-  const returnUrl = encodeURIComponent(window.location.href);
-  window.location.href = LOGIN_PAGE_URL + '?redirect=' + returnUrl;
+  redirectToLogin();
 }
 
 function handleLogout() {
   sessionStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(SESSION_KEY);
-  updateUI();
-  window.location.reload();
+  window.location.href = LOGIN_PAGE_URL;
 }
 
 function bindEvents() {
