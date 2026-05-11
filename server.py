@@ -1188,16 +1188,38 @@ _SENSITIVE_API_PREFIXES = (
 )
 
 
-_PUBLIC_API_PATHS = frozenset({
+_PUBLIC_API_PREFIXES = frozenset({
     "/api/config",
-    "/api/v2/db/auth/login",
-    "/api/v2/db/health",
+    "/api/projects",
+    "/api/upload",
+    "/api/v2/assets",
+    "/api/v2/chat",
+    "/api/v2/config",
+    "/api/v2/db",
+    "/api/v2/dreamina",
+    "/api/v2/grid_tiles",
+    "/api/v2/images/derivatives",
+    "/api/v2/matting",
+    "/api/v2/projects",
+    "/api/v2/proxy",
+    "/api/v2/runninghubwf",
+    "/api/v2/save_output",
+    "/api/v2/save_output_from_url",
+    "/api/v2/output-files",
+    "/api/v2/subscription/activate",
+    "/api/v2/update/apply",
+    "/api/v2/user",
+    "/api/v2/video",
+    "/api/v2/workflows",
 })
 
 
 def _is_sensitive_api_path(path):
     clean_path = str(path or "").split("?", 1)[0].rstrip("/") or "/"
-    if clean_path in _PUBLIC_API_PATHS:
+    if any(
+        clean_path == prefix or clean_path.startswith(prefix + "/")
+        for prefix in _PUBLIC_API_PREFIXES
+    ):
         return False
     return any(
         clean_path == prefix or clean_path.startswith(prefix + "/")
