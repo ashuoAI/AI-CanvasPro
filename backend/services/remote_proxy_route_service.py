@@ -170,7 +170,9 @@ class RemoteProxyRouteService:
         if not api_key:
             task_id = self._extract_task_id_from_url(api_url)
             api_key = self._get_cached_api_key(task_id)
+            print(f"[task-proxy] apiKey missing from request, extracted task_id={task_id}, cached_api_key={'***' if api_key else 'EMPTY'}")
         if not api_url or not api_key:
+            print(f"[task-proxy] 400 Missing apiUrl or apiKey: api_url={api_url[:80] if api_url else 'EMPTY'}, api_key={'***' if api_key else 'EMPTY'}")
             return self._json_err(400, "Missing apiUrl or apiKey")
 
         headers = {

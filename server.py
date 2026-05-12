@@ -2984,6 +2984,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             REMOTE_PROXY_ROUTE_SERVICE.cache_task_api_key(
                                 header_task_id, api_key
                             )
+                            print(f"[body-probe:header] cached task_id={header_task_id}")
                             _json_ok(
                                 self,
                                 {
@@ -3016,6 +3017,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     REMOTE_PROXY_ROUTE_SERVICE.cache_task_api_key(
                                         found_task_id, api_key
                                     )
+                                    print(f"[body-probe:body] cached task_id={found_task_id}")
                                     _json_ok(
                                         self,
                                         {
