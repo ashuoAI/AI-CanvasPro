@@ -1082,8 +1082,30 @@ def _write_user_settings(data, migrate=True, user_id=None):
     next_system_settings.pop("fileSavePaths", None)
     _write_json_file(SYSTEM_SETTINGS_FILE, next_system_settings)
 
+def _parse_cookies(handler):
+    cookies = {}
+    cookie_header = handler.headers.get("Cookie") or handler.headers.get("cookie") or ""
+    if not cookie_header:
+        return cookies
+    for item in cookie_header.split(";"):
+        item = item.strip()
+        if "=" not in item:
+            continue
+        key, _, value = item.partition("=")
+        cookies[key.strip()] = value.strip()
+    return cookies
+
+
 def _extract_user_id_from_request(handler):
     try:
+        cookies = _parse_cookies(handler)
+        cookie_user_id = cookies.get("aic_user_id")
+        if cookie_user_id:
+            try:
+                return int(cookie_user_id)
+            except (ValueError, TypeError):
+                pass
+
         token = DATABASE_ROUTE_SERVICE._auth.extract_token_from_request(handler)
         if not token:
             return None
@@ -1326,6 +1348,10 @@ def _json_err(handler, code, msg):
 def _send_route_response(handler, response):
     if not isinstance(response, dict):
         raise ValueError("Route response must be a dict")
+    cookies = response.get("cookies")
+    if isinstance(cookies, dict):
+        for name, value in cookies.items():
+            handler.send_header("Set-Cookie", f"{name}={value}; Path=/; HttpOnly; SameSite=Lax")
     kind = str(response.get("kind") or "").strip()
     if kind == "json_ok":
         _json_ok(handler, response.get("data"))
@@ -2361,12 +2387,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             parsed = urlparse(self.path)
             qs = parse_qs(parsed.query, keep_blank_values=True, max_num_fields=20)
-            has_token = bool(
+
+            cookies = _parse_cookies(self)
+            existing_user_id = cookies.get("aic_user_id")
+            if existing_user_id:
+                try:
+                    int(existing_user_id)
+                except (ValueError, TypeError):
+                    existing_user_id = None
+
+            jwt_token = (
                 (qs.get("jwt") or [""])[0].strip()
                 or (qs.get("token") or [""])[0].strip()
                 or (qs.get("auth_token") or [""])[0].strip()
             )
-            if not has_token:
+
+            if jwt_token:
+                user = DATABASE_ROUTE_SERVICE._auth.validate_jwt(jwt_token)
+                if not user:
+                    user = DATABASE_ROUTE_SERVICE._auth.validate_token(jwt_token)
+                if user and user.get("user_id"):
+                    self.send_header(
+                        "Set-Cookie",
+                        f"aic_user_id={user['user_id']}; Path=/; HttpOnly; SameSite=Lax",
+                    )
+            elif not existing_user_id:
                 self.send_response(302)
                 self.send_header("Location", "/login.html")
                 self.end_headers()

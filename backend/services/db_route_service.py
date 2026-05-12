@@ -19,8 +19,11 @@ class DatabaseRouteService:
         self._settings = settings_data_service or SettingsDataService()
 
     @staticmethod
-    def _json_ok(data):
-        return {"kind": "json_ok", "data": data}
+    def _json_ok(data, cookies=None):
+        result = {"kind": "json_ok", "data": data}
+        if cookies:
+            result["cookies"] = cookies
+        return result
 
     @staticmethod
     def _json_err(code, message):
@@ -169,7 +172,7 @@ class DatabaseRouteService:
             "user": user,
             "token": jwt_info["token"],
             "expires_at": jwt_info["expires_at"],
-        })
+        }, cookies={"aic_user_id": str(user["user_id"])})
 
     def _handle_logout(self, handler, body):
         user, err = self._authenticate(handler)
@@ -177,7 +180,10 @@ class DatabaseRouteService:
             return err
         token = self._auth.extract_token_from_request(handler)
         self._auth.revoke_token(token)
-        return self._json_ok({"success": True, "message": "Logged out successfully"})
+        return self._json_ok(
+            {"success": True, "message": "Logged out successfully"},
+            cookies={"aic_user_id": "; Max-Age=0"},
+        )
 
     def _handle_generate_token(self, handler, body):
         data, err = self._parse_body(body)
