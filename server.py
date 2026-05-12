@@ -1350,8 +1350,9 @@ def _send_route_response(handler, response):
         raise ValueError("Route response must be a dict")
     cookies = response.get("cookies")
     if isinstance(cookies, dict):
+        handler._aic_cookie = None
         for name, value in cookies.items():
-            handler.send_header("Set-Cookie", f"{name}={value}; Path=/; HttpOnly; SameSite=Lax")
+            handler._aic_cookie = f"{name}={value}; Path=/; HttpOnly; SameSite=Lax"
     kind = str(response.get("kind") or "").strip()
     if kind == "json_ok":
         _json_ok(handler, response.get("data"))
@@ -2407,10 +2408,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if not user:
                     user = DATABASE_ROUTE_SERVICE._auth.validate_token(jwt_token)
                 if user and user.get("user_id"):
-                    self.send_header(
-                        "Set-Cookie",
-                        f"aic_user_id={user['user_id']}; Path=/; HttpOnly; SameSite=Lax",
-                    )
+                    self._aic_cookie = f"aic_user_id={user['user_id']}; Path=/; HttpOnly; SameSite=Lax"
             elif not existing_user_id:
                 self.send_response(302)
                 self.send_header("Location", "/login.html")
@@ -2435,7 +2433,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             pass
 
     def end_headers(self):
-        # 避免重复响应头导致浏览器 CORS 拒绝（例如 "*, *"）
+        aic_cookie = getattr(self, "_aic_cookie", None)
+        if aic_cookie:
+            self.send_header("Set-Cookie", aic_cookie)
+            self._aic_cookie = None
         header_buf = getattr(self, "_headers_buffer", []) or []
         has_cache_control = any(b"Cache-Control:" in h for h in header_buf)
         has_cors = any(b"Access-Control-Allow-Origin:" in h for h in header_buf)
