@@ -57,6 +57,7 @@ from backend.services.dreamina_cli_service import DreaminaCliService
 from backend.services.dreamina_route_service import DreaminaRouteService
 from backend.services.canvas_path_manager import CanvasPathManager
 from backend.services.db_route_service import DatabaseRouteService
+from backend.services.settings_data_service import SettingsDataService
 
 mimetypes.add_type("text/javascript; charset=utf-8", ".js")
 mimetypes.add_type("text/javascript; charset=utf-8", ".mjs")
@@ -1038,8 +1039,11 @@ def _read_user_settings(user_id=None):
         system_install_id = local_install_id
 
     if user_id:
-        user_settings = _read_json_file(_get_user_settings_file(user_id), {})
-        merged = dict(user_settings)
+        try:
+            db_settings = SETTINGS_DATA_SERVICE.get_settings(user_id)
+            merged = dict(db_settings)
+        except Exception:
+            merged = _read_json_file(_get_user_settings_file(user_id), {})
     else:
         merged = dict(local_settings)
 
@@ -1066,8 +1070,16 @@ def _write_user_settings(data, migrate=True, user_id=None):
         payload["fileSavePaths"] = _current_file_save_paths()
 
     if user_id:
-        user_payload = {k: v for k, v in payload.items() if k not in SHARED_SETTING_KEYS}
-        _write_json_file(_get_user_settings_file(user_id), user_payload)
+        db_fields = {}
+        for field in SettingsDataService.ALLOWED_SETTING_FIELDS:
+            if field in payload:
+                db_fields[field] = payload[field]
+        if db_fields:
+            try:
+                SETTINGS_DATA_SERVICE.update_settings(user_id, **db_fields)
+            except Exception:
+                user_payload = {k: v for k, v in payload.items() if k not in SHARED_SETTING_KEYS}
+                _write_json_file(_get_user_settings_file(user_id), user_payload)
 
         shared_payload = {k: v for k, v in payload.items() if k in SHARED_SETTING_KEYS}
         _write_json_file(SETTINGS_FILE, shared_payload)
@@ -1514,6 +1526,13 @@ HTTP_ROUTE_DISPATCHER = HttpRouteDispatcher(
 )
 
 DATABASE_ROUTE_SERVICE = DatabaseRouteService()
+SETTINGS_DATA_SERVICE = SettingsDataService()
+
+try:
+    from backend.services.db_service import DatabaseService
+    DatabaseService.get_instance().init_database()
+except Exception:
+    pass
 
 
 def _run_smart_clip_job(job_id, local_src, options):
