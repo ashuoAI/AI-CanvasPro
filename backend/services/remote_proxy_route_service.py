@@ -1,6 +1,4 @@
 import json
-import threading
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,44 +19,6 @@ class RemoteProxyRouteService:
             for workflow_id in (video_vip_workflow_ids or set())
             if str(workflow_id or "").strip()
         }
-        self._task_key_cache = {}
-        self._task_key_lock = threading.Lock()
-
-    def cache_task_api_key(self, task_id, api_key):
-        if not task_id or not api_key:
-            return
-        with self._task_key_lock:
-            self._task_key_cache[str(task_id).strip()] = {
-                "api_key": str(api_key).strip(),
-                "cached_at": time.time(),
-            }
-            expired_keys = [
-                k for k, v in self._task_key_cache.items()
-                if time.time() - v["cached_at"] > 1800
-            ]
-            for k in expired_keys:
-                del self._task_key_cache[k]
-
-    def _get_cached_api_key(self, task_id):
-        tid = str(task_id or "").strip()
-        if not tid:
-            return ""
-        with self._task_key_lock:
-            entry = self._task_key_cache.get(tid)
-            if entry and time.time() - entry["cached_at"] <= 1800:
-                return entry["api_key"]
-            if entry:
-                del self._task_key_cache[tid]
-        return ""
-
-    @staticmethod
-    def _extract_task_id_from_url(api_url):
-        parts = str(api_url or "").rstrip("/").split("/")
-        if parts:
-            candidate = parts[-1]
-            if candidate:
-                return candidate
-        return ""
 
     @staticmethod
     def _json_ok(data):
@@ -167,12 +127,7 @@ class RemoteProxyRouteService:
         api_url = query.get("apiUrl", [""])[0].strip() if "apiUrl" in query else ""
         api_key = self._extract_proxy_api_key(handler, query)
         api_url = api_url.rstrip(",")
-        if not api_key:
-            task_id = self._extract_task_id_from_url(api_url)
-            api_key = self._get_cached_api_key(task_id)
-            print(f"[task-proxy] apiKey missing from request, extracted task_id={task_id}, cached_api_key={'***' if api_key else 'EMPTY'}")
         if not api_url or not api_key:
-            print(f"[task-proxy] 400 Missing apiUrl or apiKey: api_url={api_url[:80] if api_url else 'EMPTY'}, api_key={'***' if api_key else 'EMPTY'}")
             return self._json_err(400, "Missing apiUrl or apiKey")
 
         headers = {

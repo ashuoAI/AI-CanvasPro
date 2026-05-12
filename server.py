@@ -2981,10 +2981,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 header_task_id = value
                                 break
                         if header_task_id and allow_task_probe_short_circuit:
-                            REMOTE_PROXY_ROUTE_SERVICE.cache_task_api_key(
-                                header_task_id, api_key
-                            )
-                            print(f"[body-probe:header] cached task_id={header_task_id}")
                             _json_ok(
                                 self,
                                 {
@@ -3014,10 +3010,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 probe_text = b"".join(chunks).decode("utf-8", "ignore")
                                 found_task_id = _extract_task_id_from_text(probe_text)
                                 if found_task_id and allow_task_probe_short_circuit:
-                                    REMOTE_PROXY_ROUTE_SERVICE.cache_task_api_key(
-                                        found_task_id, api_key
-                                    )
-                                    print(f"[body-probe:body] cached task_id={found_task_id}")
                                     _json_ok(
                                         self,
                                         {
