@@ -185,7 +185,6 @@ export function bindPreviewUploadEntry({
 } = {}) {
   if (!button || !input) return null;
   const toast = getToast(showToast);
-  input.multiple = true;
 
   const onClickButton = () => {
     if (!isPreviewModeEnabled()) return;
@@ -194,33 +193,45 @@ export function bindPreviewUploadEntry({
       toast?.(target.message, 'warn');
       return;
     }
-    input.accept = target.accept;
-    input.value = '';
-    input.click?.();
-  };
 
-  const onFileChange = async () => {
-    const files = input.files;
-    if (!files || !files.length) return;
-    try {
-      await handlePreviewUploadFiles({
-        files,
-        button,
-        storeApi,
-        uploadFileImpl,
-        showToast,
-        getProjectId,
-        applyResults
-      });
-    } finally {
-      input.value = '';
-    }
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.accept = target.accept;
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    const cleanup = () => {
+      if (fileInput.parentNode) fileInput.parentNode.removeChild(fileInput);
+    };
+
+    fileInput.addEventListener('change', async () => {
+      const files = fileInput.files;
+      if (!files || !files.length) {
+        cleanup();
+        return;
+      }
+      try {
+        await handlePreviewUploadFiles({
+          files,
+          button,
+          storeApi,
+          uploadFileImpl,
+          showToast,
+          getProjectId,
+          applyResults
+        });
+      } finally {
+        cleanup();
+      }
+    });
+
+    fileInput.addEventListener('cancel', cleanup);
+    fileInput.click();
   };
 
   button.addEventListener('click', onClickButton);
-  input.addEventListener('change', onFileChange);
   return () => {
     button.removeEventListener?.('click', onClickButton);
-    input.removeEventListener?.('change', onFileChange);
   };
 }
