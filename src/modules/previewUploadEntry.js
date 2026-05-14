@@ -185,6 +185,7 @@ export function bindPreviewUploadEntry({
 } = {}) {
   if (!button || !input) return null;
   const toast = getToast(showToast);
+  input.multiple = true;
 
   const onClickButton = () => {
     if (!isPreviewModeEnabled()) return;
@@ -194,7 +195,6 @@ export function bindPreviewUploadEntry({
       return;
     }
     input.accept = target.accept;
-    input.setAttribute('multiple', '');
     input.value = '';
     input.click?.();
   };

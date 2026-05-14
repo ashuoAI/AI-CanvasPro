@@ -147,6 +147,7 @@ test('previewUploadEntry: 绑定按钮会按当前选中节点设置 accept 并�
     }),
     showToast: () => {}
   });
+  assert.equal(input.multiple, true);
   await button.dispatch('click');
   assert.equal(input.accept, 'video/*');
   assert.equal(input.clicked, true);
