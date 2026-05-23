@@ -2136,6 +2136,36 @@ def _handle_canvas_paths_api_get(handler, path):
         external = CANVAS_PATH_MANAGER.scan_for_external_projects()
         _json_ok(handler, {"success": True, "externalProjects": external})
         return True
+    if path.startswith("/api/v2/canvas-paths/snapshots/"):
+        canvas_name = path[len("/api/v2/canvas-paths/snapshots/"):]
+        canvas_name = urllib.parse.unquote(canvas_name)
+        snapshot_dir = os.path.join(CANVAS_PATH_MANAGER.get_canvas_dir(canvas_name), "camoutput")
+        if not os.path.isdir(snapshot_dir):
+            _json_ok(handler, {"success": True, "images": [], "message": f"快照目录不存在: {snapshot_dir}"})
+            return True
+        image_exts = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tiff", ".tif"}
+        images = []
+        try:
+            for fn in sorted(os.listdir(snapshot_dir)):
+                _, ext = os.path.splitext(fn)
+                if ext.lower() not in image_exts:
+                    continue
+                fpath = os.path.join(snapshot_dir, fn)
+                try:
+                    stat = os.stat(fpath)
+                    virtual_path = CANVAS_PATH_MANAGER.build_canvas_virtual_path(canvas_name, "camoutput", fn)
+                    images.append({
+                        "filename": fn,
+                        "virtualPath": virtual_path,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                    })
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        _json_ok(handler, {"success": True, "images": images, "count": len(images)})
+        return True
     if path.startswith("/api/v2/canvas-paths/info/"):
         canvas_name = path[len("/api/v2/canvas-paths/info/"):]
         canvas_name = urllib.parse.unquote(canvas_name)
