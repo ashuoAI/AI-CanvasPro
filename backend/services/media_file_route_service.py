@@ -1050,30 +1050,93 @@ class MediaFileRouteService:
         except Exception as exc:
             return self._json_err(500, f"grid_tiles crop failed: {str(exc)}")
 
-    def _resolve_output_list_dir(self, dir_value):
+    def _resolve_output_list_dir(self, dir_value, root_dir=None):
         rel = self._normalize_posix_rel_path(dir_value)
         norm = os.path.normpath(rel).replace("\\", "/")
         if norm in ("", "."):
             norm = ""
         if norm.startswith("../") or norm == ".." or "/../" in f"/{norm}/":
             return None, None
-        output_dir = self._output_dir()
+        output_dir = os.path.abspath(root_dir or self._output_dir())
         abs_dir = os.path.abspath(os.path.join(output_dir, *([p for p in norm.split("/") if p] or [])))
         if not self._is_path_inside(abs_dir, output_dir):
             return None, None
         return abs_dir, norm
 
+    def _resolve_output_listing_root(self, source):
+        source_key = str(source or "").strip().lower()
+        if source_key in ("project-snapshot", "snapshot"):
+            mgr = self._canvas_path_manager
+            active_canvas = mgr.get_active_canvas() if mgr else ""
+            if not mgr or not active_canvas:
+                return {
+                    "source": "project-snapshot",
+                    "label": "项目快照",
+                    "rootDir": "",
+                    "rootPrefix": "",
+                    "indexOutputMedia": False,
+                    "missingCanvas": True,
+                }
+            root_dir = os.path.abspath(os.path.join(mgr.get_canvas_dir(active_canvas), "camoutput"))
+            root_prefix = mgr.build_canvas_virtual_path(active_canvas, "camoutput")
+            return {
+                "source": "project-snapshot",
+                "label": "项目快照",
+                "rootDir": root_dir,
+                "rootPrefix": root_prefix,
+                "indexOutputMedia": False,
+                "missingCanvas": False,
+            }
+        return {
+            "source": "output",
+            "label": "output",
+            "rootDir": os.path.abspath(self._output_dir()),
+            "rootPrefix": "output",
+            "indexOutputMedia": True,
+            "missingCanvas": False,
+        }
+
+    def _empty_output_files_payload(self, *, root_info, rel_dir="", order="desc", parent="", exists=False):
+        breadcrumbs = [{"name": root_info.get("label") or root_info.get("rootPrefix") or "output", "dir": ""}]
+        return {
+            "success": True,
+            "root": root_info.get("rootPrefix") or root_info.get("source") or "output",
+            "source": root_info.get("source") or "output",
+            "dir": rel_dir,
+            "parent": parent,
+            "order": order,
+            "breadcrumbs": breadcrumbs,
+            "items": [],
+            "exists": bool(exists),
+            "missingCanvas": bool(root_info.get("missingCanvas")),
+        }
+
     def _handle_output_files_list(self, handler):
         qs = urllib.parse.parse_qs(urllib.parse.urlparse(handler.path).query)
         dir_value = qs.get("dir", [""])[0]
         order = str(qs.get("order", ["desc"])[0] or "desc").lower()
+        root_info = self._resolve_output_listing_root(qs.get("source", ["output"])[0])
         if order not in ("asc", "desc"):
             order = "desc"
 
-        abs_dir, rel_dir = self._resolve_output_list_dir(dir_value)
+        if not root_info.get("rootDir"):
+            return self._json_ok(self._empty_output_files_payload(root_info=root_info, order=order, exists=False))
+
+        root_dir = os.path.abspath(root_info["rootDir"])
+        root_prefix = root_info.get("rootPrefix") or "output"
+        abs_dir, rel_dir = self._resolve_output_list_dir(dir_value, root_dir)
         if not abs_dir:
             return self._json_err(400, "Invalid output directory")
         if not os.path.isdir(abs_dir):
+            if root_info.get("source") == "project-snapshot":
+                return self._json_ok(
+                    self._empty_output_files_payload(
+                        root_info=root_info,
+                        rel_dir=rel_dir or "",
+                        order=order,
+                        exists=False,
+                    )
+                )
             return self._json_err(404, "Output directory not found")
 
         items = []
@@ -1083,8 +1146,8 @@ class MediaFileRouteService:
             return self._json_err(500, f"List output failed: {str(exc)}")
 
         output_root = os.path.abspath(self._output_dir())
-        output_index = self._load_output_index()
-        root_index = self._ensure_output_index_root(output_index, output_root)
+        output_index = self._load_output_index() if root_info.get("indexOutputMedia") else {}
+        root_index = self._ensure_output_index_root(output_index, output_root) if root_info.get("indexOutputMedia") else {}
         changed_index = False
         current_local_paths = set()
 
@@ -1092,10 +1155,10 @@ class MediaFileRouteService:
             if not name or name.startswith("."):
                 continue
             abs_path = os.path.abspath(os.path.join(abs_dir, name))
-            if not self._is_path_inside(abs_path, self._output_dir()):
+            if not self._is_path_inside(abs_path, root_dir):
                 continue
             rel_path = "/".join([p for p in (rel_dir, name) if p]).replace("\\", "/")
-            local_path = self._join_virtual_local_path("output", rel_path)
+            local_path = self._join_virtual_local_path(root_prefix, rel_path)
             try:
                 stat = os.stat(abs_path)
             except OSError:
@@ -1116,7 +1179,7 @@ class MediaFileRouteService:
                 "mtime": mtime,
                 "mediaKind": media_kind,
             }
-            if not is_dir and media_kind in ("image", "video"):
+            if root_info.get("indexOutputMedia") and not is_dir and media_kind in ("image", "video"):
                 current_local_paths.add(local_path)
                 cached = self._get_output_index_item(root_index, local_path, media_kind, size, mtime)
                 if cached is None:
@@ -1128,12 +1191,13 @@ class MediaFileRouteService:
                     item.update(self._output_index_item_to_media_payload(cached))
             items.append(item)
 
-        changed_index = self._prune_output_index_for_directory(
-            root_index,
-            rel_dir,
-            current_local_paths,
-        ) or changed_index
-        if changed_index:
+        if root_info.get("indexOutputMedia"):
+            changed_index = self._prune_output_index_for_directory(
+                root_index,
+                rel_dir,
+                current_local_paths,
+            ) or changed_index
+        if root_info.get("indexOutputMedia") and changed_index:
             self._save_output_index(output_index)
 
         reverse = order == "desc"
@@ -1151,7 +1215,7 @@ class MediaFileRouteService:
             if parent == ".":
                 parent = ""
         parts = [part for part in rel_dir.split("/") if part]
-        breadcrumbs = [{"name": "output", "dir": ""}]
+        breadcrumbs = [{"name": root_info.get("label") or root_prefix, "dir": ""}]
         acc = []
         for part in parts:
             acc.append(part)
@@ -1160,17 +1224,32 @@ class MediaFileRouteService:
         return self._json_ok(
             {
                 "success": True,
-                "root": "output",
+                "root": root_prefix,
+                "source": root_info.get("source") or "output",
                 "dir": rel_dir,
                 "parent": parent,
                 "order": order,
                 "breadcrumbs": breadcrumbs,
                 "items": items,
+                "exists": True,
             }
         )
 
     def _resolve_output_file_delete_path(self, local_path):
         normalized = self._normalize_posix_rel_path(local_path)
+        if normalized.startswith("cam-output/"):
+            mgr = self._canvas_path_manager
+            active_canvas = mgr.get_active_canvas() if mgr else ""
+            if not mgr or not active_canvas:
+                return "", ""
+            snapshot_root = os.path.abspath(os.path.join(mgr.get_canvas_dir(active_canvas), "camoutput"))
+            abs_path = mgr.resolve_canvas_virtual_path(normalized)
+            if not abs_path:
+                return "", ""
+            abs_path = os.path.abspath(abs_path)
+            if not self._is_path_inside(abs_path, snapshot_root) or abs_path == snapshot_root:
+                return "", ""
+            return abs_path, normalized
         if not normalized.startswith("output/"):
             return "", ""
         rel = normalized[len("output/") :].lstrip("/")
