@@ -71,25 +71,59 @@ class MediaFileRouteService:
             return mgr
         return None
 
-    def _get_active_canvas_output_dir(self):
+    @staticmethod
+    def _normalize_canvas_request_name(value):
+        name = str(value or "").strip()
+        if name.lower().endswith(".json"):
+            name = name[:-5]
+        return name.strip()
+
+    def _resolve_request_canvas_name(self, canvas_name=None):
+        requested = self._normalize_canvas_request_name(canvas_name)
         mgr = self._canvas_path_manager
-        if mgr:
-            active = mgr.get_active_canvas()
-            if active:
-                canvas_output = mgr.get_canvas_output_dir(active)
-                if os.path.isdir(canvas_output):
-                    return canvas_output
+        if requested:
+            if mgr:
+                mgr.set_active_canvas(requested)
+                mgr.ensure_canvas_dir(requested)
+            return requested
+        active = mgr.get_active_canvas() if mgr else ""
+        return self._normalize_canvas_request_name(active)
+
+    def _get_canvas_virtual_prefix(self, canvas_name, section, rel_path=""):
+        mgr = self._canvas_path_manager
+        if not mgr or not canvas_name:
+            return ""
+        return mgr.build_canvas_virtual_path(canvas_name, section, rel_path)
+
+    def _get_active_canvas_output_dir(self, canvas_name=None):
+        mgr = self._canvas_path_manager
+        active = self._resolve_request_canvas_name(canvas_name)
+        if mgr and active:
+            canvas_output = mgr.get_canvas_output_dir(active)
+            os.makedirs(canvas_output, exist_ok=True)
+            return canvas_output
         return self._output_dir()
 
-    def _get_active_canvas_uploads_dir(self):
+    def _get_active_canvas_uploads_dir(self, canvas_name=None):
         mgr = self._canvas_path_manager
-        if mgr:
-            active = mgr.get_active_canvas()
-            if active:
-                canvas_uploads = mgr.get_canvas_uploads_dir(active)
-                if os.path.isdir(canvas_uploads):
-                    return canvas_uploads
+        active = self._resolve_request_canvas_name(canvas_name)
+        if mgr and active:
+            canvas_uploads = mgr.get_canvas_uploads_dir(active)
+            os.makedirs(canvas_uploads, exist_ok=True)
+            return canvas_uploads
         return self._uploads_dir()
+
+    def _get_active_canvas_snapshot_dir(self, canvas_name=None):
+        mgr = self._canvas_path_manager
+        active = self._resolve_request_canvas_name(canvas_name)
+        if mgr and active:
+            if hasattr(mgr, "get_canvas_snapshot_dir"):
+                snapshot_dir = mgr.get_canvas_snapshot_dir(active)
+            else:
+                snapshot_dir = os.path.join(mgr.get_canvas_dir(active), "camoutput")
+            os.makedirs(snapshot_dir, exist_ok=True)
+            return snapshot_dir
+        return ""
 
     @staticmethod
     def _json_ok(data):
@@ -307,20 +341,28 @@ class MediaFileRouteService:
         if mgr and norm_local.startswith(mgr.CAM_OUTPUT_VIRTUAL_PREFIX + "/"):
             canvas_path = mgr.resolve_canvas_virtual_path(norm_local)
             if canvas_path:
-                active_canvas = mgr.get_active_canvas()
-                if active_canvas:
-                    canvas_dir = mgr.get_canvas_dir(active_canvas)
-                    output_dir = mgr.get_canvas_output_dir(active_canvas)
-                    uploads_dir = mgr.get_canvas_uploads_dir(active_canvas)
-                    if self._is_path_inside(canvas_path, output_dir):
-                        rel = os.path.relpath(canvas_path, output_dir).replace("\\", "/")
-                        return output_dir, f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/output", rel
-                    if self._is_path_inside(canvas_path, uploads_dir):
-                        rel = os.path.relpath(canvas_path, uploads_dir).replace("\\", "/")
-                        return uploads_dir, f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}/uploads", rel
-                    if self._is_path_inside(canvas_path, canvas_dir):
-                        rel = os.path.relpath(canvas_path, canvas_dir).replace("\\", "/")
-                        return canvas_dir, f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(active_canvas)}", rel
+                parts = norm_local.split("/")
+                canvas_name = parts[1] if len(parts) > 1 else ""
+                section = parts[2] if len(parts) > 2 else ""
+                canvas_dir = mgr.get_canvas_dir(canvas_name)
+                if section == "output":
+                    output_dir = mgr.get_canvas_output_dir(canvas_name)
+                    rel = os.path.relpath(canvas_path, output_dir).replace("\\", "/")
+                    return output_dir, mgr.build_canvas_virtual_path(canvas_name, "output"), rel
+                if section == "uploads":
+                    uploads_dir = mgr.get_canvas_uploads_dir(canvas_name)
+                    rel = os.path.relpath(canvas_path, uploads_dir).replace("\\", "/")
+                    return uploads_dir, mgr.build_canvas_virtual_path(canvas_name, "uploads"), rel
+                if section == "camoutput":
+                    if hasattr(mgr, "get_canvas_snapshot_dir"):
+                        snapshot_dir = mgr.get_canvas_snapshot_dir(canvas_name)
+                    else:
+                        snapshot_dir = os.path.join(canvas_dir, "camoutput")
+                    rel = os.path.relpath(canvas_path, snapshot_dir).replace("\\", "/")
+                    return snapshot_dir, mgr.build_canvas_virtual_path(canvas_name, "camoutput"), rel
+                if self._is_path_inside(canvas_path, canvas_dir):
+                    rel = os.path.relpath(canvas_path, canvas_dir).replace("\\", "/")
+                    return canvas_dir, f"{mgr.CAM_OUTPUT_VIRTUAL_PREFIX}/{mgr._safe_canvas_name(canvas_name)}", rel
         if norm_local.startswith("output/"):
             rel = norm_local[len("output/") :].lstrip("/")
             return self._output_dir(), "output", rel

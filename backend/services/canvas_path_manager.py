@@ -47,6 +47,9 @@ class CanvasPathManager:
     def get_canvas_uploads_dir(self, canvas_name):
         return os.path.join(self.get_canvas_dir(canvas_name), "uploads")
 
+    def get_canvas_snapshot_dir(self, canvas_name):
+        return os.path.join(self.get_canvas_dir(canvas_name), "camoutput")
+
     def get_canvas_project_file(self, canvas_name):
         safe = self._safe_canvas_name(canvas_name)
         return os.path.join(self.get_canvas_dir(canvas_name), f"{safe}.json")
@@ -56,7 +59,8 @@ class CanvasPathManager:
         output_dir = self.get_canvas_output_dir(canvas_name)
         uploads_dir = self.get_canvas_uploads_dir(canvas_name)
         errors = []
-        for d in (canvas_dir, output_dir, uploads_dir):
+        snapshot_dir = self.get_canvas_snapshot_dir(canvas_name)
+        for d in (canvas_dir, output_dir, uploads_dir, snapshot_dir):
             try:
                 os.makedirs(d, exist_ok=True)
             except OSError as exc:
