@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   project: {
     open: (payload) => ipcRenderer.invoke("project:open", payload),
     save: (payload) => ipcRenderer.invoke("project:save", payload),
+    exportPackage: (payload) => ipcRenderer.invoke("project:exportPackage", payload),
+    importPackage: (payload) => ipcRenderer.invoke("project:importPackage", payload),
     listRecent: () => ipcRenderer.invoke("project:listRecent"),
     removeRecent: (payload) => ipcRenderer.invoke("project:removeRecent", payload),
     setUnsavedState: (payload) => ipcRenderer.send("project:setUnsavedState", payload),
@@ -56,6 +58,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.on("project:externalOpenAvailable", listener);
       return () => {
         ipcRenderer.removeListener("project:externalOpenAvailable", listener);
+      };
+    },
+    onPackageProgress: (callback) => {
+      if (typeof callback !== "function") return () => {};
+      const listener = (_event, payload) => {
+        callback(payload);
+      };
+      ipcRenderer.on("project:packageProgress", listener);
+      return () => {
+        ipcRenderer.removeListener("project:packageProgress", listener);
       };
     },
   },
@@ -116,6 +128,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getLocalPreviewUrl: (payload) => ipcRenderer.invoke("file:getLocalPreviewUrl", payload),
   importLocalFile: (payload) => ipcRenderer.invoke("file:importLocalFile", payload),
   selectDirectory: (payload) => ipcRenderer.invoke("dialog:selectDirectory", payload),
+  notificationSound: {
+    listMp3Files: (payload) =>
+      ipcRenderer.invoke("notificationSound:listMp3Files", payload),
+    listSystemSounds: () => ipcRenderer.invoke("notificationSound:listSystemSounds"),
+    openSystemSoundFolder: () =>
+      ipcRenderer.invoke("notificationSound:openSystemSoundFolder"),
+  },
   showItemInFolder: (payload) => ipcRenderer.invoke("shell:showItemInFolder", payload),
   openKnownFolder: (payload) => ipcRenderer.invoke("shell:openKnownFolder", payload),
   shell: {
@@ -144,6 +163,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     logEvent: (payload) => ipcRenderer.invoke("diagnostics:logEvent", payload),
     createPackage: () => ipcRenderer.invoke("diagnostics:createPackage"),
     openLogsFolder: () => ipcRenderer.invoke("diagnostics:openLogsFolder"),
+  },
+  notification: {
+    showGenerationComplete: (payload) =>
+      ipcRenderer.invoke("notification:showGenerationComplete", payload),
   },
   localAssetCleanup: {
     scan: (payload) => ipcRenderer.invoke("localAssetCleanup:scan", payload),

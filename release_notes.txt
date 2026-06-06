@@ -1,3 +1,29 @@
+🎉 V0.4.9 版本更新啦！
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1RX5z6gEXq/
+
+✨ 新增功能：
+- 新增“即梦官方”的排队等待，既然即梦只能一条条升那么干脆做一个排队让他慢慢排好了 点击第二个任务开始排队 左侧栏的“任务”能看到排队时间 可以随时取消
+- 新增runninghub视频节点 bernini新视频编辑模型 vip限定
+- 新增任务完成后的声音提示，可以在设置-常规里面开启 或者自定义声音
+- 新增任务完成后如果窗口不在激活状态 会有右下角的提示跳出，可以在设置里面开关
+- 新增画布项目的收集功能，现在可以一次性收集当前画布上面的所有资源打包，方便给别的电脑传递项目 在左侧栏AI画布里面新增选项，也可以上方栏 画布项目右键“收集当前项目”
+- “注释节点”现在支持 Markdown格式 上方栏增加 “转为markdown格式” 按钮
+- 视频节点上方栏 加入“视频倒放”功能
+
+🐛 修复与优化：
+- /预设 用户自定义的“加入提示词”现在是直接加入到提示词 不会覆盖掉原来的内容
+- apimart/grsai 的香蕉和gptimage2模型上传图片入参改成官方规格14张/16张 runninghub的它官方只能10张
+- 修复@入参会占用@资源的次数
+- 修复 视频编辑V5.4 高级设置没有记忆的问题 
+- 修复火山方舟 sd2.0 选了秒数无效的问题
+
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！ 
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.4.8 版本更新啦！
 
 [previewVideoUrl]: https://www.bilibili.com/video/BV1RX5z6gEXq/

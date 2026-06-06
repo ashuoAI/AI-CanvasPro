@@ -860,6 +860,95 @@ class LocalMediaProcessingRouteService:
         except Exception as exc:
             return self._json_err(500, f"Error composing audio: {str(exc)}")
 
+    def _handle_video_reverse(self, handler):
+        data, error = self._read_json_request(handler)
+        if error is not None:
+            return error
+
+        src_path = (data.get("src") or "").strip()
+        local_src, error = self._validate_src_path(
+            src_path,
+            missing_message="Source video not found",
+        )
+        if error is not None:
+            return error
+
+        try:
+            startupinfo = self._startupinfo()
+            wh = self._ffprobe_video_wh(local_src, startupinfo)
+            if not wh:
+                return self._json_err(400, "Source video has no video stream")
+            duration = self._ffprobe_duration_sec(local_src, startupinfo)
+            fps_int = self._ffprobe_video_fps_int(local_src, startupinfo)
+            has_audio = self._ffprobe_has_audio(local_src, startupinfo)
+
+            out_dir = os.path.join(self._output_dir(), "ReverseVideo")
+            os.makedirs(out_dir, exist_ok=True)
+            filename = self._new_filename("reverse", "mp4")
+            out_path = os.path.join(out_dir, filename)
+
+            filters = ["[0:v]reverse,setpts=PTS-STARTPTS,format=yuv420p[v]"]
+            if has_audio:
+                filters.append("[0:a]areverse,asetpts=PTS-STARTPTS[a]")
+
+            cmd = [
+                self._ffmpeg(),
+                "-y",
+                "-i",
+                local_src,
+                "-filter_complex",
+                ";".join(filters),
+                "-map",
+                "[v]",
+            ]
+            if has_audio:
+                cmd.extend(["-map", "[a]"])
+            else:
+                cmd.append("-an")
+            cmd.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-profile:v",
+                    "high",
+                    "-preset",
+                    "fast",
+                ]
+            )
+            if has_audio:
+                cmd.extend(["-c:a", "aac"])
+            cmd.extend(["-movflags", "+faststart", out_path])
+
+            returncode, _, stderr = self._run_process(
+                cmd,
+                timeout=600,
+                startupinfo=startupinfo,
+            )
+            if returncode != 0:
+                err_text = (stderr or b"").decode("utf-8", errors="ignore").strip()
+                return self._json_err(500, f"FFmpeg video reverse failed: {err_text or 'unknown error'}")
+
+            rel_path = f"output/ReverseVideo/{filename}"
+            return self._json_ok(
+                {
+                    "success": True,
+                    "filename": filename,
+                    "path": rel_path,
+                    "localPath": rel_path,
+                    "url": f"/{rel_path}",
+                    "videoDuration": duration,
+                    "fps": fps_int,
+                    "videoWidth": wh[0],
+                    "videoHeight": wh[1],
+                }
+            )
+        except subprocess.TimeoutExpired:
+            return self._json_err(504, "FFmpeg process timeout")
+        except Exception as exc:
+            return self._json_err(500, f"Error reversing video: {str(exc)}")
+
     def _handle_video_separate_audio_video(self, handler):
         data, error = self._read_json_request(handler)
         if error is not None:
@@ -1244,6 +1333,8 @@ class LocalMediaProcessingRouteService:
             return self._handle_video_clip_export(handler)
         if normalized == "/api/v2/audio/compose":
             return self._handle_audio_compose(handler)
+        if normalized == "/api/v2/video/reverse":
+            return self._handle_video_reverse(handler)
         if normalized == "/api/v2/video/separate_audio_video":
             return self._handle_video_separate_audio_video(handler)
         if normalized == "/api/v2/video/compose":

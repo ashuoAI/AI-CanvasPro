@@ -18,6 +18,17 @@
       ]
     },
     {
+      "key": "runninghubVideoBerniniV1",
+      "modelId": "runninghub/2062515720147259393",
+      "workflowId": "2062515720147259393",
+      "displayName": "新全能视频替换BERNINI V1",
+      "aliases": [
+        "video_edit_v54",
+        "video_edit.pro",
+        "ai-app/2062515720147259393"
+      ]
+    },
+    {
       "key": "runninghubVideoHd",
       "modelId": "runninghub/2047787809091620866",
       "workflowId": "2047787809091620866",

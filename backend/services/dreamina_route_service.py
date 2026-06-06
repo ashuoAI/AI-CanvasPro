@@ -257,6 +257,19 @@ class DreaminaRouteService:
         if path == "/api/v2/dreamina/logout":
             return self._logout_response()
 
+        if path == "/api/v2/dreamina/video_queue/cancel":
+            data, error = self._parse_json_object(body)
+            if error:
+                return error
+            try:
+                return self._json_ok(
+                    self.cli_service.cancel_video_queue_task(data.get("submitId"))
+                )
+            except ValueError as exc:
+                return self._json_err(400, str(exc))
+            except Exception as exc:
+                return self._json_ok({"success": False, "message": str(exc)})
+
         submit_routes = {
             "/api/v2/dreamina/text2image": (
                 self.cli_service.submit_text2image,

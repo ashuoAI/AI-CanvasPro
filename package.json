@@ -1,13 +1,14 @@
 {
   "name": "ai-canvaspro",
   "private": true,
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "AI CanvasPro desktop editor",
   "author": "AI CanvasPro",
   "type": "module",
   "main": "electron/main.js",
   "dependencies": {
     "electron-updater": "^6.8.3",
+    "extract-zip": "^2.0.1",
     "yazl": "^3.3.1"
   }
 }

@@ -11,6 +11,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 
 class DreaminaCliService:
@@ -49,7 +50,7 @@ class DreaminaCliService:
         self._assets_dir_getter = assets_dir_getter or (lambda: os.path.join(self._workspace_dir, "data", "assets"))
         self._dreamina_output_root = os.path.join(self._output_root_dir, "dreamina")
         self._dreamina_video_output_dir = self._output_root_dir
-        self._dreamina_download_tmp_root = os.path.join(self._user_dir, "dreamina_downloads")
+        self._dreamina_download_tmp_root = os.path.join(self._output_root_dir, "dreamina_downloads")
         self._flatten_index_file = os.path.join(self._user_dir, ".dreamina_flatten_index.json")
         self._managed_dir = os.path.join(self._user_dir, "tools", "dreamina")
         self._managed_command_path = os.path.join(
@@ -62,6 +63,10 @@ class DreaminaCliService:
         self._active_login_proc = None
         self._task_registry = {}
         self._query_counts = {}
+        self._video_queue_lock = threading.Lock()
+        self._video_queue = []
+        self._video_queue_items = {}
+        self._video_queue_worker_active = False
         self._login_timeout_sec = self._resolve_login_timeout_sec()
 
     def _resolve_login_timeout_sec(self):
@@ -894,6 +899,9 @@ class DreaminaCliService:
     def _output_dir(self):
         return self._safe_get_dir(self._output_dir_getter, self._output_root_dir)
 
+    def _download_tmp_root(self):
+        return os.path.join(self._output_dir(), "dreamina_downloads")
+
     def _uploads_dir(self):
         return self._safe_get_dir(
             self._uploads_dir_getter,
@@ -1139,6 +1147,7 @@ class DreaminaCliService:
     def _build_download_dir(self, task_type, submit_id):
         safe_task_type = re.sub(r"[^a-z0-9_-]+", "", str(task_type or "").lower()) or "unknown"
         safe_submit_id = re.sub(r"[^a-zA-Z0-9_-]+", "", str(submit_id or "").strip()) or "unknown"
+        self._dreamina_download_tmp_root = self._download_tmp_root()
         target = os.path.join(
             self._dreamina_download_tmp_root,
             safe_task_type,
@@ -1160,6 +1169,25 @@ class DreaminaCliService:
             if not os.path.exists(candidate):
                 return candidate
             index += 1
+
+    def _move_file_with_retry(self, source_path, target_path, attempts=8, delay=0.25):
+        last_error = None
+        total = max(1, int(attempts or 1))
+        for attempt in range(total):
+            try:
+                shutil.move(source_path, target_path)
+                return True
+            except PermissionError as exc:
+                last_error = exc
+            except OSError as exc:
+                last_error = exc
+                if getattr(exc, "winerror", None) != 32:
+                    raise
+            if attempt < total - 1:
+                time.sleep(max(0.05, float(delay or 0.25)))
+        if last_error:
+            raise last_error
+        return False
 
     def _load_flatten_index(self):
         try:
@@ -1248,7 +1276,10 @@ class DreaminaCliService:
         else:
             base_name = "dreamina_file"
         target_path = self._next_flat_output_path(output_dir, base_name, ext)
-        shutil.move(abs_path, target_path)
+        try:
+            self._move_file_with_retry(abs_path, target_path)
+        except OSError:
+            return self._relative_output_path(abs_path)
         rel_path = self._relative_output_path(target_path)
         self._remember_flattened_output(dedupe_key, rel_path)
         return rel_path
@@ -1347,6 +1378,7 @@ class DreaminaCliService:
         fail_reason = self._extract_fail_reason(entry)
         explicit_fail_reason = self._extract_explicit_fail_reason(entry)
         raw = {"listTask": entry}
+        outputs = self._extract_outputs(entry)
         if (
             (list_status == "failed" and fail_reason)
             or self._is_explicit_terminal_fail_reason(explicit_fail_reason)
@@ -1357,15 +1389,24 @@ class DreaminaCliService:
                 "failReason": fail_reason,
                 "raw": raw,
             }
+        if list_status == "success" and outputs:
+            return {
+                "status": "success",
+                "failReason": "",
+                "outputs": outputs,
+                "raw": raw,
+            }
         if list_status in ("querying", "success", "unknown"):
             return {
                 "status": "pending",
                 "failReason": "",
+                "outputs": [],
                 "raw": raw,
             }
         return {
             "status": "pending",
             "failReason": "",
+            "outputs": [],
             "raw": raw,
         }
 
@@ -1385,7 +1426,7 @@ class DreaminaCliService:
         response = {
             "submitId": str(submit_id or "").strip(),
             "status": fallback.get("status") or "pending",
-            "outputs": [],
+            "outputs": fallback.get("outputs") if isinstance(fallback.get("outputs"), list) else [],
             "downloadDir": download_dir_rel,
             "raw": raw,
         }
@@ -1403,6 +1444,10 @@ class DreaminaCliService:
             "data",
             "result",
             "results",
+            "item",
+            "items",
+            "task",
+            "tasks",
             "output",
             "outputs",
             "image",
@@ -1553,7 +1598,7 @@ class DreaminaCliService:
         visit(data)
         return outputs
 
-    def _submit_generation_task(self, task_type, subcommand, payload, args_builder):
+    def _submit_generation_task_direct(self, task_type, subcommand, payload, args_builder):
         if not isinstance(payload, dict):
             raise ValueError("请求体必须是 JSON 对象")
         command_path = self._ensure_command_path()
@@ -1586,6 +1631,333 @@ class DreaminaCliService:
             return response
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def _build_video_queue_submit_id(self):
+        return f"local-dreamina-video-{uuid.uuid4().hex}"
+
+    def _is_video_queue_submit_id(self, submit_id):
+        return str(submit_id or "").strip().startswith("local-dreamina-video-")
+
+    def _is_video_concurrency_error(self, error):
+        text = str(error or "").strip().lower()
+        return (
+            "exceedconcurrencylimit" in text
+            or "concurrency" in text
+            or "ret=1310" in text
+        )
+
+    def _normalize_video_model_version_for_queue(self, payload):
+        if not isinstance(payload, dict):
+            return ""
+        raw = str(payload.get("modelVersion") or payload.get("model_version") or "").strip().lower()
+        if raw.startswith("dreamina/"):
+            raw = raw[len("dreamina/"):]
+        return raw.replace("_", "-")
+
+    def _should_queue_video_generation_task(self, task_type, payload):
+        if not self._is_video_task_type(task_type):
+            return False
+        model_version = self._normalize_video_model_version_for_queue(payload)
+        if not model_version:
+            return True
+        if "vip" in model_version:
+            return False
+        return model_version in {
+            "seedance2.0",
+            "seedance2.0fast",
+            "seedance-2.0",
+            "seedance-2.0-fast",
+        }
+
+    def _get_video_queue_retry_delay_sec(self):
+        raw = str(os.environ.get("AIC_DREAMINA_VIDEO_QUEUE_RETRY_SEC", "15")).strip()
+        try:
+            value = float(raw)
+        except Exception:
+            value = 15
+        return max(1, min(300, value))
+
+    def cancel_video_queue_task(self, submit_id):
+        sid = str(submit_id or "").strip()
+        if not sid:
+            raise ValueError("submitId is required")
+        if not self._is_video_queue_submit_id(sid):
+            return {
+                "success": False,
+                "submitId": sid,
+                "message": "Only local Dreamina video queue tasks can be cancelled",
+            }
+        with self._video_queue_lock:
+            item = self._video_queue_items.get(sid)
+            if not item:
+                return {"success": False, "submitId": sid, "message": "Task not found"}
+            item["status"] = "cancelled"
+            item["message"] = "Cancelled by user"
+            item["completedAt"] = time.time()
+            if self._video_queue and self._video_queue[0].get("submitId") != sid:
+                self._video_queue = [
+                    queued for queued in self._video_queue if queued.get("submitId") != sid
+                ]
+        return {"success": True, "submitId": sid, "status": "cancelled"}
+
+    def _get_video_queue_index_locked(self, submit_id):
+        sid = str(submit_id or "").strip()
+        for index, item in enumerate(self._video_queue):
+            if item.get("submitId") == sid:
+                return index
+        return -1
+
+    def _enqueue_video_generation_task(self, task_type, subcommand, payload, args_builder):
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be a JSON object")
+        local_submit_id = self._build_video_queue_submit_id()
+        now = time.time()
+        item = {
+            "submitId": local_submit_id,
+            "remoteSubmitId": "",
+            "taskType": str(task_type or "").strip(),
+            "subcommand": str(subcommand or "").strip(),
+            "payload": dict(payload),
+            "argsBuilder": args_builder,
+            "status": "queued",
+            "message": "",
+            "result": None,
+            "createdAt": now,
+            "startedAt": 0,
+            "completedAt": 0,
+        }
+        with self._video_queue_lock:
+            self._video_queue.append(item)
+            self._video_queue_items[local_submit_id] = item
+            self._task_registry[local_submit_id] = {
+                "taskType": task_type,
+                "createdAt": now,
+                "localQueue": True,
+            }
+            self._query_counts.setdefault(local_submit_id, 0)
+            queue_index = self._get_video_queue_index_locked(local_submit_id)
+            queue_length = len(self._video_queue)
+            should_start = not self._video_queue_worker_active
+            if should_start:
+                self._video_queue_worker_active = True
+        if should_start:
+            threading.Thread(
+                target=self._run_video_queue_worker,
+                name="DreaminaVideoQueue",
+                daemon=True,
+            ).start()
+        return {
+            "submitId": local_submit_id,
+            "genStatus": "querying",
+            "queueStatus": "queued",
+            "queueIndex": queue_index,
+            "queueLength": queue_length,
+        }
+
+    def _run_video_queue_worker(self):
+        while True:
+            with self._video_queue_lock:
+                if not self._video_queue:
+                    self._video_queue_worker_active = False
+                    return
+                item = self._video_queue[0]
+                if item.get("status") == "cancelled":
+                    self._video_queue.pop(0)
+                    continue
+                item["status"] = "submitting"
+                item["startedAt"] = item.get("startedAt") or time.time()
+            try:
+                submitted = self._submit_generation_task_direct(
+                    item.get("taskType"),
+                    item.get("subcommand"),
+                    item.get("payload"),
+                    item.get("argsBuilder"),
+                )
+                remote_submit_id = str(submitted.get("submitId") or "").strip()
+                with self._video_queue_lock:
+                    item["remoteSubmitId"] = remote_submit_id
+                    item["status"] = "running"
+                    item["result"] = submitted
+                self._wait_video_queue_item_done(item)
+            except Exception as exc:
+                if self._is_video_concurrency_error(exc):
+                    with self._video_queue_lock:
+                        item["status"] = "queued"
+                        item["message"] = "Dreamina official account is busy; waiting to retry"
+                        item["result"] = {
+                            "genStatus": "querying",
+                            "queueStatus": "waiting_official",
+                        }
+                    time.sleep(self._get_video_queue_retry_delay_sec())
+                    continue
+                with self._video_queue_lock:
+                    item["status"] = "failed"
+                    item["message"] = str(exc)
+                    item["completedAt"] = time.time()
+            self._finish_video_queue_item(item.get("submitId"))
+
+    def _wait_video_queue_item_done(self, item):
+        remote_submit_id = str(item.get("remoteSubmitId") or "").strip()
+        if not remote_submit_id:
+            return
+        while True:
+            result = self.query_result(remote_submit_id, auto_download=True)
+            status = str(result.get("status") or "").strip().lower()
+            outputs = result.get("outputs") if isinstance(result.get("outputs"), list) else []
+            with self._video_queue_lock:
+                item["result"] = result
+                if item.get("status") == "cancelled":
+                    item["completedAt"] = time.time()
+                    return
+                if status == "failed" or (status == "success" and outputs):
+                    item["status"] = status
+                    item["completedAt"] = time.time()
+                    return
+            time.sleep(2)
+
+    def _finish_video_queue_item(self, submit_id):
+        sid = str(submit_id or "").strip()
+        if not sid:
+            return
+        with self._video_queue_lock:
+            if self._video_queue and self._video_queue[0].get("submitId") == sid:
+                self._video_queue.pop(0)
+
+    def _build_video_queue_cached_result(
+        self,
+        item,
+        status,
+        queue_index,
+        queue_length,
+        message="",
+    ):
+        sid = str(item.get("submitId") or "").strip()
+        remote_submit_id = str(item.get("remoteSubmitId") or "").strip()
+        cached = item.get("result") if isinstance(item.get("result"), dict) else {}
+        result = dict(cached)
+        result["submitId"] = sid
+        result["status"] = str(status or result.get("status") or "pending").strip() or "pending"
+        result.setdefault("outputs", [])
+        raw = result.get("raw") if isinstance(result.get("raw"), dict) else {}
+        result["raw"] = {
+            **raw,
+            "localQueueSubmitId": sid,
+            "remoteSubmitId": remote_submit_id,
+            "queue_status": str(status or "").strip() or "queued",
+            "queue_idx": max(queue_index, 0),
+            "queue_length": max(queue_length, 0),
+        }
+        if message and result["status"] == "failed" and not result.get("failReason"):
+            result["failReason"] = message
+        return result
+
+    def _query_video_queue_item(self, submit_id, auto_download=True):
+        sid = str(submit_id or "").strip()
+        with self._video_queue_lock:
+            item = self._video_queue_items.get(sid)
+            if not item:
+                return {
+                    "submitId": sid,
+                    "status": "failed",
+                    "failReason": "Dreamina local queue item not found",
+                    "outputs": [],
+                    "raw": {"queue_status": "missing"},
+                }
+            status = str(item.get("status") or "queued").strip().lower()
+            remote_submit_id = str(item.get("remoteSubmitId") or "").strip()
+            message = str(item.get("message") or "").strip()
+            queue_index = self._get_video_queue_index_locked(sid)
+            queue_length = len(self._video_queue)
+            cached_outputs = []
+            cached_result = item.get("result") if isinstance(item.get("result"), dict) else {}
+            if isinstance(cached_result.get("outputs"), list):
+                cached_outputs = cached_result.get("outputs") or []
+            if status in ("success", "failed") and (status == "failed" or cached_outputs):
+                return self._build_video_queue_cached_result(
+                    item,
+                    status,
+                    queue_index,
+                    queue_length,
+                    message,
+                )
+        if remote_submit_id and status in ("running", "success", "failed"):
+            result = self.query_result(remote_submit_id, auto_download=auto_download)
+            result_status = str(result.get("status") or "").strip().lower()
+            result_outputs = (
+                result.get("outputs") if isinstance(result.get("outputs"), list) else []
+            )
+            if result_status == "failed" or (result_status == "success" and result_outputs):
+                with self._video_queue_lock:
+                    latest = self._video_queue_items.get(sid)
+                    if latest is item:
+                        latest["status"] = result_status
+                        latest["result"] = dict(result)
+                        latest["completedAt"] = latest.get("completedAt") or time.time()
+            result["submitId"] = sid
+            raw = result.get("raw") if isinstance(result.get("raw"), dict) else {}
+            result["raw"] = {
+                **raw,
+                "localQueueSubmitId": sid,
+                "remoteSubmitId": remote_submit_id,
+                "queue_status": status,
+                "queue_idx": max(queue_index, 0),
+                "queue_length": max(queue_length, 0),
+            }
+            return result
+        if status == "failed":
+            return {
+                "submitId": sid,
+                "status": "failed",
+                "failReason": message or "Dreamina queued task failed",
+                "outputs": [],
+                "raw": {
+                    "queue_status": "failed",
+                    "queue_idx": max(queue_index, 0),
+                    "queue_length": max(queue_length, 0),
+                },
+            }
+        if status == "cancelled":
+            return {
+                "submitId": sid,
+                "status": "cancelled",
+                "outputs": [],
+                "downloadDir": "",
+                "raw": {
+                    "localQueueSubmitId": sid,
+                    "queue_status": "cancelled",
+                    "queue_idx": max(queue_index, 0),
+                    "queue_length": max(queue_length, 0),
+                },
+            }
+        return {
+            "submitId": sid,
+            "status": "pending",
+            "queueStatus": status or "queued",
+            "queueIndex": max(queue_index, 0),
+            "queueLength": max(queue_length, 0),
+            "outputs": [],
+            "raw": {
+                "localQueueSubmitId": sid,
+                "queue_status": status or "queued",
+                "queue_idx": max(queue_index, 0),
+                "queue_length": max(queue_length, 0),
+            },
+        }
+
+    def _submit_generation_task(self, task_type, subcommand, payload, args_builder):
+        if self._should_queue_video_generation_task(task_type, payload):
+            return self._enqueue_video_generation_task(
+                task_type,
+                subcommand,
+                payload,
+                args_builder,
+            )
+        return self._submit_generation_task_direct(
+            task_type,
+            subcommand,
+            payload,
+            args_builder,
+        )
 
     def submit_text2image(self, payload):
         def build_args(data, temp_dir):
@@ -1812,6 +2184,9 @@ class DreaminaCliService:
         if not sid:
             raise ValueError("submitId 为必填项")
 
+        if self._is_video_queue_submit_id(sid):
+            return self._query_video_queue_item(sid, auto_download=auto_download)
+
         command_path = self._ensure_command_path()
         task_type = self._get_registered_task_type(sid) or "unknown"
         download_dir_abs = self._build_download_dir(task_type, sid)
@@ -1881,7 +2256,7 @@ class DreaminaCliService:
                 if not local_path:
                     continue
                 item["localPath"] = self._flatten_local_output_path(local_path, task_type, sid)
-            self._cleanup_empty_parents(download_dir_abs, self._dreamina_download_tmp_root)
+            self._cleanup_empty_parents(download_dir_abs, self._download_tmp_root())
         status = self._to_status_phase(gen_status, outputs)
         fail_reason = self._extract_fail_reason(data)
         explicit_fail_reason = self._extract_explicit_fail_reason(data)
@@ -1899,6 +2274,15 @@ class DreaminaCliService:
                 allow_non_video=True,
             )
             if fallback and fallback.get("status") == "failed":
+                return self._build_query_fallback_response(
+                    submit_from_result,
+                    download_dir_rel,
+                    fallback,
+                    raw_extra={
+                        "queryResult": data if isinstance(data, dict) else {},
+                    },
+                )
+            if fallback and fallback.get("status") == "success":
                 return self._build_query_fallback_response(
                     submit_from_result,
                     download_dir_rel,
