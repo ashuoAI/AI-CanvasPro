@@ -1,7 +1,7 @@
 {
   "name": "ai-canvaspro",
   "private": true,
-  "version": "0.4.11",
+  "version": "0.4.12",
   "description": "AI CanvasPro desktop editor",
   "author": "AI CanvasPro",
   "type": "module",
