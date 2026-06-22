@@ -6,11 +6,11 @@
 
 **基于节点的 AI 多模态画布编辑器**
 
-一款纯原生 Web 应用（HTML / CSS / JS），让你在无限画布上，通过可视化节点连线的方式，自由组合 AI 能力，生成文本、图像、视频与音频。
+一款公开发布的 Electron 桌面应用，让你在无限画布上，通过可视化节点连线的方式，自由组合 AI 能力，生成文本、图像、视频与音频。
 
 [![作者：阿硕](https://img.shields.io/badge/作者-阿硕-pink?style=flat-square)](https://space.bilibili.com/1876480181)
 [![Bilibili](https://img.shields.io/badge/Bilibili-主页-00A1D6?style=flat-square\&logo=bilibili)](https://space.bilibili.com/1876480181)
-[![License](https://img.shields.io/badge/License-Source%20Available%20%7C%20NC-orange?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-Non--Open--Source%20%7C%20NC-orange?style=flat-square)](LICENSE)
 
 </div>
 
@@ -18,9 +18,11 @@
 
 ## 授权与非官方部署声明
 
-本项目采用双许可证模式，为 **Source Available / 公开源码项目**，并非 OSI 定义下的开源项目。未获得书面商业授权时，源码仅供个人学习、研究、评估和非商业使用。
+本项目为 **公开发布的 Electron 桌面应用**，不是开源软件，也不是 OSI 定义下的开源项目。除非另有书面授权，版权方保留所有权利。
 
-未经作者单独书面授权，禁止将本项目或其衍生版本用于商业用途、SaaS、云服务、公开托管服务、收费服务、商业交付、外包交付、广告引流、会员订阅或其他直接/间接商业收益场景。
+公开 GitHub 页面、公开下载或公开发布不等于开源授权，也不代表允许修改、再分发、改包发布或用于商业用途。关于开源定义可参考 [OSI Open Source Definition](https://opensource.org/osd)；关于仓库许可证可参考 [GitHub Licensing a repository](https://docs.github.com/articles/licensing-a-repository)。
+
+未经作者单独书面授权，禁止将本项目或其衍生版本用于商业用途、SaaS、云服务、公开托管服务、收费服务、商业交付、外包交付、广告引流、会员订阅、二次分发、改包发布或其他直接/间接商业收益场景。
 
 除作者明确公布的地址外，任何第三方公开部署、镜像站点、托管服务或改版服务均为非官方行为，与作者无关；请勿在非官方站点输入 API Key、授权码或其他敏感信息。
 
