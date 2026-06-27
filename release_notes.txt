@@ -1,3 +1,39 @@
+🎉 V0.5.1 版本更新啦！
+为了后续更好维护 又重构了部分代码 遇到BUG及时反馈给我吧
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1Q87u6sEpM/
+
+✨ 新增功能：
+- 新增 RH工作流的画布排队方法 如你会员是3并发的 你框选10个节点生成 那么它会生成最开头3个剩下的会进入队列 （左侧栏-“任务”可以参看）当有一个返回了队列会补充上 实现不间断生成
+- 新增 火山方舟doubao seed 2.1系列模型 
+- 新增 视频生成节点 - apimart - seedance2mini 模型 seedance2.0支持4K
+- 新增 分镜脚本 开放/预设 自定义预设
+- 新增 多选后上方栏新增 批量下载 方便一次性把需要的素材整理
+- 新增 apikey 点击测试通过了 就自动保存
+- 新增 视频生成节点 即梦官方 seedance2.0_vip 4k 分辨率的支持
+- 新增 设置-apikey-火山语音支持
+- 新增 音频生成节点 runinghub模型 ：Suno V5.5单曲 、Suno V5.5自定义、SunoV5单曲、SunoV5自定义、MiniMax语音2.8HD、MiniMax 语音2.8 Turbo、MiniMax Music 2.6纯音乐、MiniMax Music 2.6文生音乐
+- 新增 音频生成节点 火山语音：语音 TTS2 
+- 新增 图像生成节点 即梦官方 的所有模型支持 生成数量上限为10 目前仅限即梦高级会员使用 如果你即梦高级会员现在生成大部分模型都是免费 用起来十分爽
+- 新增 图像生成节点 即梦官方 图片超清/放大 
+
+🐛 修复与优化：
+- 优化 语音工作室的几个小BUG
+- 优化 agent界面接入一些子功能
+- 优化 图片节点 标注、裁剪功能的效率
+- 优化 节点入参槽的文字显示现在更加清晰
+- 优化 多图片展开时拖拽节点依然是移动节点 而拖拽展开的节点是复制图像
+- 修复 拖拽节点时 按空格键移动画布 屏幕外节点不刷新的问题
+- 修复 视频节点信息（分辨率+帧数在下方显示）开启之后卡 和闪的问题
+- 修复 截图功能 显示区域 已经快捷键不能改的问题
+- 修复 agent界面模型遮挡选不中的问题
+- 修复 火山方舟 Seedance 2.0 上传音频时走了apimart的上传链路 
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！ 
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.5.0 版本更新啦！
 
 [previewVideoUrl]: https://www.bilibili.com/video/BV1Q87u6sEpM/
