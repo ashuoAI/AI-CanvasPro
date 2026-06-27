@@ -33,6 +33,7 @@
 ## 视频演示
 
 - [使用说明1](https://www.bilibili.com/video/BV1RX5z6gEXq/)
+- [新影视二创高效做法Scail2+语音工作室演示](https://www.bilibili.com/video/BV1nX7n6uEbi/)
 - [浏览器节点用法](https://www.bilibili.com/video/BV1Q87u6sEpM/)
 - [seedance2.0 线条控制运镜玩法](https://www.bilibili.com/video/BV1ZzjL6UEoA/)
 - [Scail2 全面实测使用方法](https://www.bilibili.com/video/BV16DJH6jEmk/)
