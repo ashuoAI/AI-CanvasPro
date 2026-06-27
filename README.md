@@ -98,6 +98,8 @@
 - 文案、脚本、分镜、旁白、音色克隆和音频处理
 - 把常用节点流程保存成资产或工作流，后续一键复用
 
+当前最新版本：[v0.5.1](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.5.1)
+
 更新内容可以查看：[release_notes.txt](./release_notes.txt)
 
 ## 🚀 快速开始
@@ -116,47 +118,6 @@
    - macOS：打开 `.dmg` 或解压 `.zip` 后启动应用。
 3. **首次使用**
    打开应用后，先在设置里配置对应平台的 API Key，再开始创建画布节点。
-
-### 方法 2：源码运行（推荐开发者）
-
-1. 需要安装 Git / Node.js / Python 3.12 以上 / FFmpeg
-   1. git:[Git - Install for Windows](https://git-scm.com/install/windows)
-   2. Node.js:[Download Node.js](https://nodejs.org/)
-   3. ffmpeg:[Download FFmpeg](https://ffmpeg.org/download.html)
-   4. python:[Welcome to Python.org](https://www.python.org/)
-2. **克隆仓库**
-   ```bash
-   任意一个不带中文路径的目录 上面的地址栏 输入 CMD
-   # 克隆项目
-   git clone https://github.com/ashuoAI/AI-CanvasPro.git
-   # 进入项目
-   cd AI-CanvasPro
-   ```
-3. **安装依赖**
-   ```bash
-   # 安装前端 / Electron 依赖
-   npm install
-
-   # 创建虚拟环境
-   python -m venv venv
-
-   # 激活虚拟环境
-   venv\Scripts\activate.bat
-
-   # 安装依赖
-   pip install -r requirements.txt
-   ```
-4. **启动开发版应用**
-   ```bash
-   npm run electron
-   ```
-   Electron 会启动或复用本地 Python 服务。
-
-5. **只启动本地 Web 服务**
-   ```bash
-   python server.py
-   ```
-   然后访问 <http://localhost:8777>。
 
 ***
 
