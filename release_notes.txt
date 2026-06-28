@@ -1,3 +1,26 @@
+🎉 V0.5.2 版本更新啦！
+为了后续更好维护 又重构了部分代码 遇到BUG及时反馈给我吧
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1Q87u6sEpM/
+
+✨ 新增功能：
+- 新增 视频生成节点 agnes 2K 4K分辨率
+- 新增 图像生成节点 agnes 2K 4K分辨率
+- 增加了各家申请API的图文 在设置-APIKEY-查看攻略
+
+
+🐛 修复与优化：
+- 修复了一些图片视频上传链路
+
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！
+
+windows版本百度网盘下载链接: https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g 提取码: 8848
+
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.5.1 版本更新啦！
 为了后续更好维护 又重构了部分代码 遇到BUG及时反馈给我吧
 
