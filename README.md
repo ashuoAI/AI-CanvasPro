@@ -99,7 +99,7 @@
 - 文案、脚本、分镜、旁白、音色克隆和音频处理
 - 把常用节点流程保存成资产或工作流，后续一键复用
 
-当前最新版本：[v0.5.2](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.5.2)
+当前最新版本：[v0.5.3](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.5.3)
 
 更新内容可以查看：[release_notes.txt](./release_notes.txt)
 

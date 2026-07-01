@@ -1,3 +1,29 @@
+🎉 V0.5.3 版本更新啦！
+云端/本地comfyui RH应用 画布直接调用 直接效率拉满了
+IMAGE2 的2K 4K貌似都不能用 等待修复吧
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1nX7n6uEbi
+
+✨ 新增功能：
+- 新增 RHAI应用（VIP限定）、本地comfyui工作流支持、云端comfyui工作流支持 入口-左侧栏-自定义AI应用
+- 新增 设置-apikey-ComfyUI本地/云端 地址输入 本地在默认情况下comfyui地址不需要修改，云端地址就填写你云端打开comfyui后的网页地址 先确保工作流可用能正常生成后 导出工作流（api）载入到 “自定义AI应用”里面配置好需要的参数即可 你看我说肯定不会等我视频吧。。
+- 图像生成节点 新增 GRSAI - nano-banana-2-lite
+- 图像生成节点 新增 runninghub工作流 -人物全角度V4（VIP限定） 跑一次出15张图片的
+- 新增 左侧栏和左下角小地图栏折叠选项 鼠标移动过去才会显示 | 设置-常规-折叠
+
+🐛 修复与优化：
+- 优化了生成视频时加载的动画 节省一些资源
+- 优化入参 之前是@图片1 @图片2 现在改成 @节点的名字
+- 修复 API网站已经返回信息到本地了 但是依然显示保存出错的问题
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！
+
+windows版本百度网盘下载链接: https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g 提取码: 8848
+
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.5.2 版本更新啦！
 为了后续更好维护 又重构了部分代码 遇到BUG及时反馈给我吧
 
