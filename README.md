@@ -1,7 +1,3 @@
-
-
-https://github.com/user-attachments/assets/3e810880-2445-4e3f-8a08-48a0c211d704
-
 <div align="center">
 
 <img src="images\favicon.svg" width="64" height="64" alt="AI Canvas Logo"/>
