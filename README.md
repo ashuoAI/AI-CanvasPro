@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/3e810880-2445-4e3f-8a08-48a0c211d704
+
 <div align="center">
 
 <img src="images\favicon.svg" width="64" height="64" alt="AI Canvas Logo"/>
@@ -183,6 +187,6 @@
 
 ## 反馈/交流群
 
-<img src="https://api.ashuoai.com/static/contact/fankui.jpg" alt="反馈/交流群二维码" width="360">
+<img src="https://api.ashuoai.com/static/contact/fankui.jpg?v=20260703" alt="反馈/交流群二维码" width="360">
 
 新功能和BUG反馈可以在这里提出：[点击这里](https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink)
