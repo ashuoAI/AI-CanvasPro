@@ -8,6 +8,8 @@
 
 一款公开发布的 Electron 桌面应用，让你在无限画布上，通过可视化节点连线的方式，自由组合 AI 能力，生成文本、图像、视频与音频。
 
+现已支持接入 RH AI 应用、ComfyUI 云端工作流和 ComfyUI 本地工作流，可将外部模型与工作流能力统一带入画布节点中编排复用。
+
 [![作者：阿硕](https://img.shields.io/badge/作者-阿硕-pink?style=flat-square)](https://space.bilibili.com/1876480181)
 [![Bilibili](https://img.shields.io/badge/Bilibili-主页-00A1D6?style=flat-square\&logo=bilibili)](https://space.bilibili.com/1876480181)
 [![License](https://img.shields.io/badge/License-Non--Open--Source%20%7C%20NC-orange?style=flat-square)](LICENSE)
@@ -33,6 +35,7 @@
 ## 视频演示
 
 - [使用说明1](https://www.bilibili.com/video/BV1RX5z6gEXq/)
+- [RH AI 应用 / ComfyUI 本地与云端接入教程](https://www.bilibili.com/video/BV1VqT764E7d)
 - [新影视二创高效做法Scail2+语音工作室演示](https://www.bilibili.com/video/BV1nX7n6uEbi/)
 - [浏览器节点用法](https://www.bilibili.com/video/BV1Q87u6sEpM/)
 - [seedance2.0 线条控制运镜玩法](https://www.bilibili.com/video/BV1ZzjL6UEoA/)
