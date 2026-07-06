@@ -102,7 +102,7 @@
 - 文案、脚本、分镜、旁白、音色克隆和音频处理
 - 把常用节点流程保存成资产或工作流，后续一键复用
 
-当前最新版本：[v0.5.3](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.5.3)
+当前最新版本：[v0.5.4](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.5.4)
 
 更新内容可以查看：[release_notes.txt](./release_notes.txt)
 
@@ -115,6 +115,7 @@
 1. **下载应用**
    - 最新版下载页：[GitHub Releases Latest](https://github.com/ashuoAI/AI-CanvasPro/releases/latest)
    - 全部版本下载页：[GitHub Releases](https://github.com/ashuoAI/AI-CanvasPro/releases)
+   - 百度网盘下载：[点击跳转](https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g) 提取码: 8848
    - Windows 用户：在 Assets 中下载 `AI-CanvasPro-windows-*.exe`
    - macOS 用户：在 Assets 中下载 `AI-CanvasPro-Mac-arm64-*.dmg` 或 `.zip`
 2. **安装并启动**
@@ -183,6 +184,6 @@
 
 ## 反馈/交流群
 
-<img src="https://api.ashuoai.com/static/contact/fankui.jpg?v=20260705" alt="反馈/交流群二维码" width="360">
+<img src="https://api.ashuoai.com/static/contact/fankui.jpg?v=0.5.4-202607062103" alt="反馈/交流群二维码" width="360">
 
 新功能和BUG反馈可以在这里提出：[点击这里](https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink)

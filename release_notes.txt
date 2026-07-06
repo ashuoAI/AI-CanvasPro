@@ -1,3 +1,42 @@
+🎉 V0.5.4 版本更新啦！
+云端/本地comfyui RH应用 画布直接调用 直接效率拉满了
+IMAGE2 的2K 4K貌似都不能用 等待修复吧
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1VqT764E7d
+
+✨ 新增功能：
+- 新增 音频生成节点 火山方舟 Doubao-音频生成-1.0 自然语言描述生成音频 
+- 新增 图像生成节点 apimart Midjourney 全系列：V8.2、8.1、7、6.1、5.2、5.1、niji 7、niji 6
+    Nano Banana Lite， 
+- 新增 视频生成节点 apimart happyhorse-1.1 快乐马1.1
+- 新增 视频生成节点 apimart Gemini Omni Flash 支持文生/图生视频 视频编辑
+- 新增 视频生成节点 apimart Gork 1.5 支持文生/图生视频 最长30秒视频
+- 新增 图像/视频/音频生成节点 上方栏的上传功能 
+- 补充 视频生成节点 火山方舟的seedance 2.0 更新了4K 
+- 补充 视频生成节点 RH工作流 Wan2.2和LTX2.3视频模型的支持
+
+🐛 修复与优化：
+- 优化 节点全局性能 （持续中）
+- 优化 RH工作流的并发检测规则 现在应该不会误判不同会员的并发数了
+- 修复 由于证书导致网站已经输出了输出但下载不到本地的问题
+- 修复 低分辨率电脑有些窗口显示不全的问题
+- 修复 图像生成节点的 比例质量组件 一点就消失的问题
+- 修复 语音工作室 用火山语音 + 音频 时的识别失败
+- 修复 AI应用 本地云端COMFYUI创建出来的模型加载图片视频音频失败
+- 修复 AI应用 同名工作流会覆盖的问题
+- 修复 agnes视频模型 多参考报错问题
+- 修复 在output输出文件夹里面删除了图片（文件）后画布依然会留有旧图的问题
+
+感谢各位的反馈！！！
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！ 
+
+windows版本百度网盘下载链接: https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g 提取码: 8848
+
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.5.3 版本更新啦！
 云端/本地comfyui RH应用 画布直接调用 直接效率拉满了
 IMAGE2 的2K 4K貌似都不能用 等待修复吧
