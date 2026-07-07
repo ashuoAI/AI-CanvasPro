@@ -1,3 +1,24 @@
+🎉 V0.5.4.1 版本更新啦！
+
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1VqT764E7d
+
+✨ 新增功能：
+-
+
+🐛 修复与优化：
+- 修复0.5.4的语音API检测BUG
+
+感谢各位的反馈！！！
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！ 
+
+windows版本百度网盘下载链接: https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g 提取码: 8848
+
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.5.4 版本更新啦！
 云端/本地comfyui RH应用 画布直接调用 直接效率拉满了
 IMAGE2 的2K 4K貌似都不能用 等待修复吧
