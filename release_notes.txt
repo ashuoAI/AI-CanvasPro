@@ -1,3 +1,45 @@
+🎉 V0.6.0 版本更新啦！
+优化画布性能 现在多图多视频会顺畅非常多
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV16wMe6EE3m
+
+✨ 新增功能：
+- 新增 剧本工作室（beta限免） 一站式生成AI视频 入口在 画布正上方画布模式指上去就会跳出选项
+- 新增 设置 apikey 自定义中转站（VIP限定） 终于便宜API自由啦 3快/15秒 seedance2 我来了 现在支持newapi类型 openai格式的自定义中转站 你们自行添加 但是目前做不到完全兼容 有报错和我说吧
+- 新增 白板节点（测试）
+- 新增 codex cli 登陆 入口：设置-cli接口登陆 即梦CLI登陆也同步迁移到这个界面了
+- 新增 宫格节点已经双击菜单可以创建 之前只能在上方栏创建
+- 新增 版本的检测更新 入口-左侧栏-设置-检查更新
+- 新增 图像生成节点 runninghub工作流 漫画转真人V3 、 krea2文生图
+- 新增 图像生成节点 火山方舟-Doubao-Seedream-5.0-pro
+- 新增 图像生成节点 apimart-Doubao-Seedream-5.0-pro
+- 新增 文本生成节点 apimart - gpt-5.6-luna gpt-5.6-terra gpt-5.6-sol claude-sonnet-5 claude-fable-5 gemini-3.5-flash
+- 新增 文本生成节点 runninghub模型 - glm-5.2 qwen/qwen3.7-max qwen/qwen3.7-plus bytedance/doubao-seed-2.1-pro bytedance/doubao-seed-2.1-turbo google/gemini-3.1-flash-lite-preview google/gemini-3.5-flash openai/gpt-5.6-sol  openai/gpt-5.6-terra openai/gpt-5.5 openai/gpt-5.5-pro anthropic/claude-fable-5 openai/gpt-5.4-pro anthropic/claude-opus-4.8 anthropic/claude-opus-4.7 glm-5.2
+
+🐛 修复与优化：
+- 极大优化画布性能 现在多图多视频会顺畅非常多
+- 优化了背景点的显示 现在是世界坐标
+- 优化了 360全景图的加载速度 现在是秒加载了
+- 优化“即梦官方”排队的问题 现在seedance2.0和seedance2.0fast是分开排队的
+- 把一些没用的依赖删除减少安装程序的体积 以及加快安装速度
+- 修复 根据agnes官方 agnes视频模型仅保留文生/图生/首尾帧 视频
+- 修复 图像生成节点 上方栏的上传按钮无效的问题
+- 修复 宫格节点 图片拖进去变模糊的问题
+- 修复 在图像生成节点已有图片时再次生成返回图片加载会慢几秒的问题
+- 修复0.5.4.1 apimart返回请求接受不到的BUG
+- 修复 图像生成节点 上传图片时比例不自适应导致下游节点拿不到正确的比例的问题
+- 修复即梦CLI长久已经的登陆BUG 授权回来还要等大概10秒才适配上的问题  
+
+感谢各位的反馈！！！
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！ 
+
+windows版本百度网盘下载链接: https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g 提取码: 8848
+
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.5.4.1 版本更新啦！
 
 
