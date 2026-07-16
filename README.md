@@ -35,6 +35,8 @@
 ## 视频演示
 
 - [使用说明1](https://www.bilibili.com/video/BV1RX5z6gEXq/)
+- [剧本工作室使用教程](https://www.bilibili.com/video/BV1stKM6mEXT/)
+- [全音频参考生成视频 音参宗成立！](https://www.bilibili.com/video/BV16wMe6EE3m)
 - [RH AI 应用 / ComfyUI 本地与云端接入教程](https://www.bilibili.com/video/BV1VqT764E7d)
 - [新影视二创高效做法Scail2+语音工作室演示](https://www.bilibili.com/video/BV1nX7n6uEbi/)
 - [浏览器节点用法](https://www.bilibili.com/video/BV1Q87u6sEpM/)
@@ -102,7 +104,7 @@
 - 文案、脚本、分镜、旁白、音色克隆和音频处理
 - 把常用节点流程保存成资产或工作流，后续一键复用
 
-当前最新版本：[v0.6.0](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.6.0)
+当前最新版本：[v0.6.1](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.6.1)
 
 更新内容可以查看：[release_notes.txt](./release_notes.txt)
 
@@ -184,6 +186,6 @@
 
 ## 反馈/交流群
 
-<img src="https://api.ashuoai.com/static/contact/fankui.jpg?v=0.6.0-202607160513" alt="反馈/交流群二维码" width="360">
+<img src="https://api.ashuoai.com/static/contact/fankui.jpg?v=0.6.1-202607161200" alt="反馈/交流群二维码" width="360">
 
 新功能和BUG反馈可以在这里提出：[点击这里](https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink)
