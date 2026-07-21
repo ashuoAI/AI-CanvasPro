@@ -1,3 +1,33 @@
+🎉 V0.6.3 版本更新啦！
+优化画布性能 现在多图多视频会顺畅非常多
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV16wMe6EE3m
+
+✨ 新增功能：
+- 新增 RH国际版支持 国内版全部海外模型将会在7月30日下线 朋友们要用便宜海外模型就别再往RH国内版冲了
+- 图像生成节点 即梦官方（需高级会员） 支持Seedream 5.0 Pro模型
+- 改进 剧本工作室功能  提取角色场景 单集生成脚本 agent强化
+    同样卡片下多次生成任务有历史记录可以自己切换
+    视频播放可以拖动并且截取 ”视频当前帧“
+    “@功能“ 新增 “片段帧” 分类来承接 “视频当前帧”“视频片段”
+- 改进了上方项目栏
+
+🐛 修复与优化：
+- 修复 语音工作室 删掉一些没用按钮
+- 修复热更失效的问题
+- 修复白色主题下的一些按钮颜色
+- 修复所有下载保存的BUG
+
+感谢各位的反馈！！！
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！
+
+windows版本百度网盘下载链接: https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g 提取码: 8848
+
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.6.2 版本更新啦！
 优化画布性能 现在多图多视频会顺畅非常多
 

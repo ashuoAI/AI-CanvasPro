@@ -16,22 +16,6 @@
 
 </div>
 
-***
-
-## 授权与非官方部署声明
-
-本项目为 **公开发布的 Electron 桌面应用**，不是开源软件，也不是 OSI 定义下的开源项目。除非另有书面授权，版权方保留所有权利。
-
-公开 GitHub 页面、公开下载或公开发布不等于开源授权，也不代表允许修改、再分发、改包发布或用于商业用途。关于开源定义可参考 [OSI Open Source Definition](https://opensource.org/osd)；关于仓库许可证可参考 [GitHub Licensing a repository](https://docs.github.com/articles/licensing-a-repository)。
-
-未经作者单独书面授权，禁止将本项目或其衍生版本用于商业用途、SaaS、云服务、公开托管服务、收费服务、商业交付、外包交付、广告引流、会员订阅、二次分发、改包发布或其他直接/间接商业收益场景。
-
-除作者明确公布的地址外，任何第三方公开部署、镜像站点、托管服务或改版服务均为非官方行为，与作者无关；请勿在非官方站点输入 API Key、授权码或其他敏感信息。
-
-详细条款请查看 [LICENSE](./LICENSE) 和 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)。
-
-***
-
 ## 视频演示
 
 - [使用说明1](https://www.bilibili.com/video/BV1RX5z6gEXq/)
@@ -104,7 +88,7 @@
 - 文案、脚本、分镜、旁白、音色克隆和音频处理
 - 把常用节点流程保存成资产或工作流，后续一键复用
 
-当前最新版本：[v0.6.2](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.6.2)
+当前最新版本：[v0.6.3](https://github.com/ashuoAI/AI-CanvasPro/releases/tag/v0.6.3)
 
 更新内容可以查看：[release_notes.txt](./release_notes.txt)
 
@@ -186,6 +170,22 @@
 
 ## 反馈/交流群
 
-<img src="https://api.ashuoai.com/static/contact/fankui.jpg?v=0.6.2-202607210142" alt="反馈/交流群二维码" width="360">
+<img src="https://api.ashuoai.com/static/contact/fankui.jpg?v=0.6.3-202607211037" alt="反馈/交流群二维码" width="360">
 
 新功能和BUG反馈可以在这里提出：[点击这里](https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink)
+
+***
+
+## 授权与非官方部署声明
+
+本项目为 **公开发布的 Electron 桌面应用**，不是开源软件，也不是 OSI 定义下的开源项目。除非另有书面授权，版权方保留所有权利。
+
+公开 GitHub 页面、公开下载或公开发布不等于开源授权，也不代表允许修改、再分发、改包发布或用于商业用途。关于开源定义可参考 [OSI Open Source Definition](https://opensource.org/osd)；关于仓库许可证可参考 [GitHub Licensing a repository](https://docs.github.com/articles/licensing-a-repository)。
+
+未经作者单独书面授权，禁止将本项目或其衍生版本用于商业用途、SaaS、云服务、公开托管服务、收费服务、商业交付、外包交付、广告引流、会员订阅、二次分发、改包发布或其他直接/间接商业收益场景。
+
+除作者明确公布的地址外，任何第三方公开部署、镜像站点、托管服务或改版服务均为非官方行为，与作者无关；请勿在非官方站点输入 API Key、授权码或其他敏感信息。
+
+详细条款请查看 [LICENSE](./LICENSE) 和 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)。
+
+***
