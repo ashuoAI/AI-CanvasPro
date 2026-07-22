@@ -1,3 +1,26 @@
+🎉 V0.6.4 版本更新啦！
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV16wMe6EE3m
+
+✨ 新增功能：
+- 文本生成节点 新增Agnes 2.5 Flash 灰度 如果你账号api没显示那么就是用不了
+- 图像生成节点 Agnes Image 2.1 Flash新增支持3K 
+- 加入sd2便宜渠道 (VIP限定)
+- 应用户要求加入类似figma的操作方式 就是鼠标滚轮是上下滑动画布，设置-常规里面-输入偏好-鼠标习惯
+- 继续改进 剧本工作室功能
+
+🐛 修复与优化：
+- 剧本工作室用不了即梦cli的问题
+- 修复 点一次生成会有多个请求的BUG 加入防重锁
+
+感谢各位的反馈！！！
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！
+windows版本百度网盘下载链接: https://pan.baidu.com/s/1igcxiCGpAd_CFoj9Am2s-g 提取码: 8848
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.6.3 版本更新啦！
 优化画布性能 现在多图多视频会顺畅非常多
 
